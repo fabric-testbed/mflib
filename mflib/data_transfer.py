@@ -49,7 +49,7 @@ class ImportTool:
         Runs the 3 commands needed to set up the docker-compose app
         """
         self.install_docker()
-        self.setup_nat64(node_name)
+        #self.setup_nat64(node_name)
         self.clone_repository()
 
     def install_docker(self):
