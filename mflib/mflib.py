@@ -158,15 +158,21 @@ class MFLib(Core):
         # only if it does not exist
         try:
             meas = slice.get_node(name=meas_nodename)
-            meas_interface = meas.get_interface(
-                name=(f"meas_nic_{meas_nodename}_{site}")
-            )
         except Exception as e:
             if "Node not found" in str(e):
                 meas = slice.add_node(name=meas_nodename, site=site)
                 meas.set_capacities(cores=cores, ram=ram, disk=disk)
                 meas.set_image(image)
-            elif ("Interface not found" in str(e)) or ("Node not found" in str(e)):
+            else:
+                print(f"Exception: {e}")
+                traceback.print_exc()
+
+        try:
+            meas_interface = meas.get_interface(
+                name=(f"meas_nic_{meas_nodename}_{site}")
+            )
+        except Exception as e:
+            if "Interface not found" in str(e):
                 meas_interface = meas.add_component(
                     model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
                 ).get_interfaces()[0]
