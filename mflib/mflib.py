@@ -126,7 +126,12 @@ class MFLib(Core):
         for node in slice.get_nodes():
             this_site = node.get_site()
             this_nodename = node.get_name()
-            if (node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}") is not None):
+
+            # Add a meas interface to the node only if it does not exist
+            if (
+                node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}"))
+                is not None
+            ):
                 if this_site not in interfaces.keys():
                     interfaces[this_site] = []
                 this_interface = node.add_component(
@@ -136,17 +141,17 @@ class MFLib(Core):
 
         # Note this is also defined in self.measurement_node_name but we are in a static method
 
-        if (slice.get_node(name=meas_nodename) is not None):
+        # Add a meas node and its meas interface to the node
+        # only if it does not exist
+        if slice.get_node(name=meas_nodename) is not None:
             meas_nodename = "meas-node"
-
             meas_image = image
             meas = slice.add_node(name=meas_nodename, site=site)
-
             meas.set_capacities(cores=cores, ram=ram, disk=disk)
             meas.set_image(meas_image)
             meas_interface = meas.add_component(
-                    model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
-                ).get_interfaces()[0]
+                model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
+            ).get_interfaces()[0]
             if site not in interfaces.keys():
                 interfaces[site] = []
             (interfaces[site]).append(meas_interface)
