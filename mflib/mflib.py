@@ -127,12 +127,13 @@ class MFLib(Core):
         meas_node = None
         meas_interface = None
         meas_net = None
+        meas_site = site
 
         # Create L3 meas net at each site of the slice
         for node in slice.get_nodes():
-            site = node.get_site()
-            if slice.get_l3network(name=f"l3_meas_net_{site}") is None:
-                slice.add_l3network(name=f"l3_meas_net_{site}", interfaces=[])
+            this_site = node.get_site()
+            if slice.get_l3network(name=f"l3_meas_net_{this_site}") is None:
+                slice.add_l3network(name=f"l3_meas_net_{this_site}", interfaces=[])
 
         for node in slice.get_nodes():
             this_site = node.get_site()
@@ -155,20 +156,22 @@ class MFLib(Core):
                 this_meas_net.add_interface(this_meas_net_interface)
 
         # Create L3 meas net at meas node site of the slice
-        meas_net = slice.get_l3network(name=f"l3_meas_net_{site}")
+        meas_net = slice.get_l3network(name=f"l3_meas_net_{meas_site}")
         if meas_net is None:
-            meas_net = slice.add_l3network(name=f"l3_meas_net_{site}", interfaces=[])
+            meas_net = slice.add_l3network(
+                name=f"l3_meas_net_{meas_site}", interfaces=[]
+            )
 
         try:
             meas_node = slice.get_node(name=meas_nodename)
         except Exception as e:
             if "Node not found" in str(e):
-                meas_node = slice.add_node(name=meas_nodename, site=site)
+                meas_node = slice.add_node(name=meas_nodename, site=meas_site)
                 meas_node.set_capacities(cores=cores, ram=ram, disk=disk)
                 meas_node.set_image(image)
                 meas_interface = meas_node.add_component(
                     model="NIC_Basic",
-                    name=(f"meas_nic_{meas_nodename}_{site}"),
+                    name=(f"meas_nic_{meas_nodename}_{meas_site}"),
                 ).get_interfaces()[0]
                 meas_interface.set_mode("auto")
                 meas_net.add_interface(meas_interface)
@@ -179,7 +182,7 @@ class MFLib(Core):
         if len(meas_net.get_interfaces()) == 0:
             meas_interface = meas_node.add_component(
                 model="NIC_Basic",
-                name=(f"meas_nic_{meas_nodename}_{site}"),
+                name=(f"meas_nic_{meas_nodename}_{meas_site}"),
             ).get_interfaces()[0]
             meas_interface.set_mode("auto")
             meas_net.add_interface(meas_interface)
