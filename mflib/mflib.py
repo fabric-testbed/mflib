@@ -144,8 +144,7 @@ class MFLib(Core):
                     this_interface = node.add_component(
                         model="NIC_Basic",
                         name=(f"meas_nic_{this_nodename}_{this_site}"),
-                    )
-                    # .get_interfaces()[0]
+                    ).get_interfaces()[0]
                     this_interface.set_mode("auto")
 
                 else:
@@ -177,8 +176,7 @@ class MFLib(Core):
             if "Interface not found" in str(e):
                 meas_interface = meas.add_component(
                     model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
-                )
-                # .get_interfaces()[0]
+                ).get_interfaces()[0]
                 meas_interface.set_mode("auto")
             else:
                 print(f"Exception: {e}")
