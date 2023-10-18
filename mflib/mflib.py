@@ -126,44 +126,56 @@ class MFLib(Core):
         for node in slice.get_nodes():
             this_site = node.get_site()
             this_nodename = node.get_name()
+            this_interface = None
 
             # Add a meas interface to the node only if it does not exist
-            if (
-                node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}"))
-                is not None
-            ):
-                if this_site not in interfaces.keys():
-                    interfaces[this_site] = []
-                this_interface = node.add_component(
-                    model="NIC_Basic", name=(f"meas_nic_{this_nodename}_{this_site}")
-                ).get_interfaces()[0]
+            try
+                this_interface = node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}")
+            except Exception as e:
+                if "Interface not found" in str(e):
+                    if this_site not in interfaces.keys():
+                        interfaces[this_site] = []
+                    this_interface = node.add_component(
+                        model="NIC_Basic", name=(f"meas_nic_{this_nodename}_{this_site}")
+                    ).get_interfaces()[0]
+                    
+                else:
+                    print(f"Exception: {e}")
+                    traceback.print_exc()
+            if this_interface is not None:
                 (interfaces[this_site]).append(this_interface)
 
         # Note this is also defined in self.measurement_node_name but we are in a static method
 
         # Add a meas node and its meas interface to the node
         # only if it does not exist
-        if slice.get_node(name=meas_nodename) is not None:
+        try
             meas_nodename = "meas-node"
-            meas_image = image
-            meas = slice.add_node(name=meas_nodename, site=site)
-            meas.set_capacities(cores=cores, ram=ram, disk=disk)
-            meas.set_image(meas_image)
-            meas_interface = meas.add_component(
-                model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
-            ).get_interfaces()[0]
-            if site not in interfaces.keys():
-                interfaces[site] = []
-            (interfaces[site]).append(meas_interface)
+            meas = slice.get_node(name=meas_nodename)
+            meas_interface = meas.get_interface(name=(f"meas_nic_{meas_nodename}_{site}")
+        except Exception as e:
+            if "Node not found" in str(e):
+                meas_image = image
+                meas = slice.add_node(name=meas_nodename, site=site)
+                meas.set_capacities(cores=cores, ram=ram, disk=disk)
+                meas.set_image(meas_image)
+            elif ("Interface not found" in str(e)) or ("Node not found" in str(e)):
+                meas_interface = meas.add_component(
+                    model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
+                ).get_interfaces()[0]
+            else:
+                print(f"Exception: {e}")
+                traceback.print_exc()
+        if site not in interfaces.keys():
+            interfaces[site] = []
+        (interfaces[site]).append(meas_interface)
 
-        if network_type == "FABNetv4":
-            for site in interfaces.keys():
+        for site in interfaces.keys():
+            if (slice.get_l3network(name=f"l3_meas_net_{site}") is None):
                 slice.add_l3network(
                     name=f"l3_meas_net_{site}", interfaces=interfaces[site]
-                )
-        else:
-            logging.info(f"Unknown {network_type} Network type")
-            return False
+                    )
+
         # This logging will appear in the fablib log.
         logging.info(
             f'Added Meas node & network to slice "{slice.get_name()}" topology. Cores: {cores}  RAM: {ram}GB Disk {disk}GB'
