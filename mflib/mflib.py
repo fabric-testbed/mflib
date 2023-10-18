@@ -129,7 +129,7 @@ class MFLib(Core):
             this_interface = None
 
             # Add a meas interface to the node only if it does not exist
-            try
+            try:
                 this_interface = node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}")
             except Exception as e:
                 if "Interface not found" in str(e):
@@ -149,7 +149,7 @@ class MFLib(Core):
 
         # Add a meas node and its meas interface to the node
         # only if it does not exist
-        try
+        try:
             meas_nodename = "meas-node"
             meas = slice.get_node(name=meas_nodename)
             meas_interface = meas.get_interface(name=(f"meas_nic_{meas_nodename}_{site}")
