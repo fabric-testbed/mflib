@@ -130,15 +130,18 @@ class MFLib(Core):
 
             # Add a meas interface to the node only if it does not exist
             try:
-                this_interface = node.get_interface(name=(f"meas_nic_{this_nodename}_{this_site}")
+                this_interface = node.get_interface(
+                    name=(f"meas_nic_{this_nodename}_{this_site}")
+                )
             except Exception as e:
                 if "Interface not found" in str(e):
                     if this_site not in interfaces.keys():
                         interfaces[this_site] = []
                     this_interface = node.add_component(
-                        model="NIC_Basic", name=(f"meas_nic_{this_nodename}_{this_site}")
+                        model="NIC_Basic",
+                        name=(f"meas_nic_{this_nodename}_{this_site}"),
                     ).get_interfaces()[0]
-                    
+
                 else:
                     print(f"Exception: {e}")
                     traceback.print_exc()
@@ -152,7 +155,9 @@ class MFLib(Core):
         try:
             meas_nodename = "meas-node"
             meas = slice.get_node(name=meas_nodename)
-            meas_interface = meas.get_interface(name=(f"meas_nic_{meas_nodename}_{site}")
+            meas_interface = meas.get_interface(
+                name=(f"meas_nic_{meas_nodename}_{site}")
+            )
         except Exception as e:
             if "Node not found" in str(e):
                 meas_image = image
@@ -171,10 +176,10 @@ class MFLib(Core):
         (interfaces[site]).append(meas_interface)
 
         for site in interfaces.keys():
-            if (slice.get_l3network(name=f"l3_meas_net_{site}") is None):
+            if slice.get_l3network(name=f"l3_meas_net_{site}") is None:
                 slice.add_l3network(
                     name=f"l3_meas_net_{site}", interfaces=interfaces[site]
-                    )
+                )
 
         # This logging will appear in the fablib log.
         logging.info(
