@@ -107,9 +107,8 @@ class MFLib(Core):
         cores=4,
         ram=16,
         disk=500,
-        network_type="FABNetv4",
         site="EDC",
-        image="default_ubuntu_20",
+        image="docker_ubuntu_20",
     ):
         """
         Adds Measurement node and measurement network to an unsubmitted slice object.
@@ -133,7 +132,7 @@ class MFLib(Core):
         for node in slice.get_nodes():
             this_site = node.get_site()
             if slice.get_l3network(name=f"l3_meas_net_{this_site}") is None:
-                slice.add_l3network(name=f"l3_meas_net_{this_site}", interfaces=[])
+                slice.add_l3network(name=f"l3_meas_net_{this_site}", type="IPv4")
 
         for node in slice.get_nodes():
             this_site = node.get_site()
@@ -158,9 +157,7 @@ class MFLib(Core):
         # Create L3 meas net at meas node site of the slice
         meas_net = slice.get_l3network(name=f"l3_meas_net_{meas_site}")
         if meas_net is None:
-            meas_net = slice.add_l3network(
-                name=f"l3_meas_net_{meas_site}", interfaces=[]
-            )
+            meas_net = slice.add_l3network(name=f"l3_meas_net_{meas_site}", type="IPv4")
 
         try:
             meas_node = slice.get_node(name=meas_nodename)
