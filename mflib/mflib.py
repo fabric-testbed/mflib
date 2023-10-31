@@ -614,11 +614,15 @@ class MFLib(Core):
                         f"ansible_ssh_user={mfuser} "
                         f"node_exporter_listen_ip={ip_addr} "
                         f"ansible_ssh_common_args='-o StrictHostKeyChecking=no' "
-                        f'management_ip_type="{node.validIPAddress(node.get_management_ip())}"'
+                        f'management_ip_type="{this_node.validIPAddress(this_node.get_management_ip())}"'
                     )
 
         # Prometheus e_Elk
-        hosts_txt = ""
+        hosts_txt = f"""
+[all:vars]
+ansible_ssh_private_key_file=/home/mfuser/.ssh/mfuser_private_key
+
+"""
         # e_hosts_txt = ""
         hosts_tail = f"""
 
