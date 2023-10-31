@@ -134,6 +134,11 @@ class MFLib(Core):
             if slice.get_l3network(name=f"l3_meas_net_{this_site}") is None:
                 slice.add_l3network(name=f"l3_meas_net_{this_site}", type="IPv4")
 
+        # Create L3 meas net at meas node site of the slice
+        meas_net = slice.get_l3network(name=f"l3_meas_net_{meas_site}")
+        if meas_net is None:
+            meas_net = slice.add_l3network(name=f"l3_meas_net_{meas_site}", type="IPv4")
+
         for node in slice.get_nodes():
             this_site = node.get_site()
             this_nodename = node.get_name()
@@ -153,11 +158,9 @@ class MFLib(Core):
                 ).get_interfaces()[0]
                 this_meas_net_interface.set_mode("auto")
                 this_meas_net.add_interface(this_meas_net_interface)
-
-        # Create L3 meas net at meas node site of the slice
-        meas_net = slice.get_l3network(name=f"l3_meas_net_{meas_site}")
-        if meas_net is None:
-            meas_net = slice.add_l3network(name=f"l3_meas_net_{meas_site}", type="IPv4")
+            node.add_route(
+                subnet=meas_net.get_subnet(), next_hop=this_meas_net.get_gateway()
+            )
 
         try:
             meas_node = slice.get_node(name=meas_nodename)
@@ -175,6 +178,9 @@ class MFLib(Core):
             else:
                 print(f"Exception: {e}")
                 # traceback.print_exc()
+        meas_node.add_route(
+            subnet=fablib.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+        )
 
         if len(meas_net.get_interfaces()) == 0:
             meas_interface = meas_node.add_component(
