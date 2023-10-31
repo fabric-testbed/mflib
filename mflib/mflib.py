@@ -179,7 +179,7 @@ class MFLib(Core):
                 print(f"Exception: {e}")
                 # traceback.print_exc()
         meas_node.add_route(
-            subnet=fablib.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+            subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
         )
 
         if len(meas_net.get_interfaces()) == 0:
