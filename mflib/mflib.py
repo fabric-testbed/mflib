@@ -596,38 +596,19 @@ class MFLib(Core):
 
         for network in networks:
             network_name = network.get_name()
-            network_type = network.get_type()
-            if str(network_type) == "FABNetv4" and network_name.startswith(
-                "l3_meas_net_"
-            ):
+            if network_name.startswith("l3_meas_net_"):
                 network_site = network.get_site()
-                network_subnet = network.get_subnet()
                 interfaces = network.get_interfaces()
-                available_ips = network.get_available_ips()
                 for interface in interfaces:
-                    ip_addr = available_ips.pop(0)
-                    interface.ip_addr_add(addr=ip_addr, subnet=network_subnet)
-                    interface.ip_link_up()
-                    node = interface.get_node()
-                    if node.get_reservation_id() == meas_node.get_reservation_id():
-                        for other_network in networks:
-                            if other_network.get_name() == network_name:
-                                continue
-                            if str(
-                                other_network.get_type()
-                            ) == "FABNetv4" and other_network.get_name().startswith(
-                                "l3_meas_net_"
-                            ):
-                                node.ip_route_add(
-                                    subnet=other_network.get_subnet(),
-                                    gateway=network.get_gateway(),
-                                )
-                    else:
-                        node.ip_route_add(
-                            subnet=meas_net_subnet, gateway=network.get_gateway()
-                        )
+                    this_node = interface.get_node()
+                    ip_addr = interface.get_ip_addr()
+                    if ip_addr in ("", None):
+                        # Fablib has failed to configure this node
+                        # Force configure
+                        this_node.config()
+                        ip_addr = interface.get_ip_addr()
                     hosts.append(
-                        f"{node.get_name()} "
+                        f"{this_node.get_name()} "
                         f"ansible_host={ip_addr} "
                         f"hostname={ip_addr} "
                         f"ansible_ssh_user={mfuser} "
