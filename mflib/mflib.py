@@ -46,7 +46,9 @@ class MFLib(Core):
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
 
-    mflib_class_version = "1.0.39"
+    mflib_class_version = "1.0.40"
+    __version__ = mflib_class_version
+    __VERSION__ = mflib_class_version
 
     def set_mflib_logger(self):
         """
@@ -423,21 +425,6 @@ class MFLib(Core):
                     return False
 
             #######################
-            # Set ipv6 to ipv4 DNS
-            #######################
-            # if "ipv6_4_nat" in bss and (
-            #     bss["ipv6_4_nat"] == "set" or bss["ipv6_4_nat"] == "not_needed"
-            # ):
-            #     msg = f"NAT64 Workaround not needed..."
-            #     print(msg)
-            #     self.mflib_logger.info(msg)
-            # else:
-            #     # if True:
-            #     nat_set_results = self.set_DNS_all_nodes()
-            #     self.mflib_logger.info(f"ipv6_4_nat: {nat_set_results}")
-            #     self._update_bootstrap("ipv6_4_nat", nat_set_results)
-
-            #######################
             # Clone mf repo
             #######################
             if "repo_cloned" in bss and bss["repo_cloned"] == "ok":
@@ -701,64 +688,6 @@ Experiment_Nodes
             self.mflib_logger.error(msg)
             return "", ""
 
-    # IPV6 to IPV4 only sites fix
-    # note: should set bootstrap status file when making these 2 calls, status should be set, restored, not needed.
-    # def set_DNS_all_nodes(self):
-    #     """
-    #     Sets DNS for nodes to allow them to access ipv4 networks.
-
-    #     Returns:
-    #         string: "set" if DNS set, "not needed" otherwise.
-    #     """
-    #     # Check if we need to
-    #     # if self.meas_node.validIPAddress(self.meas_node.get_management_ip()) == "IPv6":
-    #     nat64_set = False
-    #     for node in self.slice.get_nodes():
-    #         if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #             self.set_DNS(node)
-    #             nat64_set = True
-
-    #     if nat64_set:
-    #         return "set"
-    #     else:
-    #         return "not needed"
-
-    # def restore_DNS_all_nodes(self):
-    #     """
-    #     Restores the DNS to default if previously set. See set_DNS_all_nodes.
-
-    #     Returns:
-    #         string: "restored" if restored, "not needed" if not needed
-    #     """
-    #     # Check if we need to
-    #     nat64_restored = False
-    #     for node in self.slice.get_nodes():
-    #         if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #             self.restore_DNS(node)
-    #             nat64_restored = True
-    #     if nat64_restored:
-    #         return "restored"
-    #     else:
-    #         return "not needed"
-
-    # def set_DNS(self, node):
-    #     """
-    #     Sets the DNS on IPv6 only nodes to enable access to IPv4 sites.
-    #     """
-    #     if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #         # needed to fix sudo unable to resolve error
-    #         commands = """
-    #         sudo echo -n "127.0.0.1 " | sudo cat - /etc/hostname  | sudo tee -a /etc/hosts;
-    #         sudo echo -n "2a01:4f9:c010:3f02:64:0:b9c7:6e85       objects.githubusercontent.com\n"|sudo tee -a /etc/hosts;
-    #         """
-    #         stdout, stderr = node.execute(commands, quiet=True)
-    #         self.mflib_logger.info(f"STDOUT: {stdout}")
-    #         if stderr:
-    #             self.mflib_logger.error(f"STDERR: {stderr}")
-
-    # def restore_DNS(self, node):
-    #     return
-
     def _set_all_hosts_file(self):
         meas_node_meas_net_ip = None
         for interface in self.meas_node.get_interfaces():
@@ -766,9 +695,6 @@ Experiment_Nodes
                 meas_node_meas_net_ip = interface.get_ip_addr()
         if meas_node_meas_net_ip:
             execute_threads = {}
-            # cmd = f'sudo echo -n "{meas_node_meas_net_ip} {self.measurement_node_name}" | sudo tee -a /etc/hosts;'
-            # TODO WARNING hardcoded _meas_node name here to match existing docker container needs. Need to update
-            # cmd = f'sudo echo -n "{meas_node_meas_net_ip} _meas_node" | sudo tee -a /etc/hosts;'
             cmd = f'sudo echo -n "{meas_node_meas_net_ip} {self.measurement_node_name}\n" | sudo tee -a /etc/hosts; sudo echo -n "{meas_node_meas_net_ip} _meas_node\n" | sudo tee -a /etc/hosts;'
             for node in self.slice.get_nodes():
                 execute_threads[node] = node.execute_thread(cmd)
