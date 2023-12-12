@@ -494,9 +494,8 @@ def download_output(node, local_out_dir):
         node.execute(f"sudo rm {remote_tmp_path}") 
 
 
-
 def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
-        influxdb_org=None, influxdb_url=None, influxdb_bucket=None):
+        influxdb_org=None, influxdb_url=None, influxdb_bucket=None, desttype="meas_node"):
     """
     Send OWL pcap data to InfluxDB in a remote server.
     Invokes OWL container to call parse_and_send() in MF's sock_ops/send_data.py.
@@ -513,18 +512,20 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     :type influxdb_org: str
     :param influxdb_url: IP address of the measurement node that has InfluxDB (omit http and port; just have the IP address).
     :type influxdb_url: str
+    :param desttype: Destination type, or where InfluxDB server lives; "cloud" or "meas_node".
+    :type influxdb_bucket: str
     :param influxdb_bucket: InfluxDB bucket ID.
     :type influxdb_bucket: str
     """
-    
     print("Running owl.send_to_influxdb().")
     print(f"Sending InfluxDB data to the node at {influxdb_url}.")
 
     targetdir = "/owl-output/"
     pcapfile = targetdir + pcapfile
     influxdb_org = "my-org"
-    port = "8086"
-    influxdb_url = influxdb_url +  ":" + port
+    if desttype == "meas_node":
+        port = "8086"
+        influxdb_url = influxdb_url +  ":" + port
     dir_name = "/home/rocky/owl-output/"
     cmd = f'sudo docker run -d --rm \
     --mount type=bind,source={dir_name},target={targetdir} \
@@ -537,6 +538,7 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     --token {influxdb_token} \
     --org {influxdb_org} \
     --url {influxdb_url} \
+    --desttype {desttype}\
     --bucket {influxdb_bucket}' 
     
     print(f"In the pcap sender node, running the docker command:\n{cmd}\n")
@@ -545,3 +547,5 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
         node.execute(cmd)
     except Exception as exception:
         print(exception)
+
+
