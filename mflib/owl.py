@@ -522,10 +522,14 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
 
     targetdir = "/owl-output/"
     pcapfile = targetdir + pcapfile
-    influxdb_org = "my-org"
+
+    if not influxdb_org:
+        influxdb_org = "my-org"
+
     if desttype == "meas_node":
         port = "8086"
         influxdb_url = influxdb_url +  ":" + port
+
     dir_name = "/home/rocky/owl-output/"
     cmd = f'sudo docker run -d --rm \
     --mount type=bind,source={dir_name},target={targetdir} \
