@@ -553,3 +553,14 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
         print(exception)
 
 
+def stop_influxdb_sender(dst_node):
+    """
+    Stops OWL InfluxDB container if there is one running on a remote node.
+
+    :param dst_node: destination (capturer) node
+    :type dst_node: fablib.Node
+    """
+
+    dst_node.execute('sudo docker stop owl-to-influx')
+
+
