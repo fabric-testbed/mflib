@@ -34,7 +34,7 @@ def check_owl_prerequisites(slice):
     :param slice:
     :type slice: fablib.Slice
     """
-    
+
     nodes = slice.get_nodes()
     
     for node in nodes:
@@ -116,9 +116,11 @@ def pull_owl_docker_image(node, image_name):
     node.execute(f"sudo docker pull {image_name}")
         
 
-def start_owl_sender(slice, src_node, dst_node, img_name, probe_freq=1, duration=600, no_ptp=False, src_addr=None, dst_addr=None):
+def start_owl_sender(slice, src_node, dst_node, img_name, probe_freq=1, 
+                     duration=None, no_ptp=False, src_addr=None, dst_addr=None, verbose=True):
+
     """
-    Start OWL sender inside a Docker container on a remote node by running udp_sender.py.  
+    Start OWL sender inside a Docker container on a remote node by running owl_sender.py.  
     Docker container name will be in the form of "owl-sender_10.0.0.1-10.0.1.1"
     
     :param slice:
@@ -131,15 +133,16 @@ def start_owl_sender(slice, src_node, dst_node, img_name, probe_freq=1, duration
     :type img_name: str
     :param prob_freq: (default=1) interval (sec) at which probe packets are sent
     :type prob_freq: int
-    :param duration: (default=600) how long (sec) to run OWL
-    :type duratino: int
+    :param duration: (default=None) how long (sec) to run OWL
+    :type duration: int
     :param no_ptp: (default=False) Set this to True only when testing the functionalities on non-PTP node
     :type no_ptp: bool
     :src_addr: (default=None) Specify source IP address only if source node has more than 1 experiment interface
     :type src_addr: str 
     :dst_addr: (default=None) Specify destination IP address only if dest node has more than 1 experiment interface
     :type dst_addr: str 
-    
+    :verbose: (default=True) if True, prints docker run command
+    :type verbose: bool
     """
 
     # pull owl image fron DockerHub
@@ -161,23 +164,28 @@ def start_owl_sender(slice, src_node, dst_node, img_name, probe_freq=1, duration
                 --pid="host" \
                 --privileged \
                 --name owl-sender_{src_ip}-{dst_ip} \
-                {img_name}  sock_ops/udp_sender.py  \
-                --ptp-so-file "/MeasurementFramework/user_services/owl/owl/sock_ops/time_ops/ptp_time.so" \
+                {img_name}  sock_ops/owl_sender.py  \
+                --ptp-so-file "/MeasurementFramework/user_services/owl/owl/sock_ops/ptp_time.so" \
                 --dest-ip {dst_ip} --dest-port 5005 --frequency {probe_freq} \
-                --seq-n {num} --duration {duration}'
+                --seq-n {num}'
+
+    if duration:
+        src_cmd += f' --duration {duration}'
 
     if no_ptp:
         # Just use Python time.time_ns() for timestamping
-        src_cmd += '--sys-clock'
+        src_cmd += ' --sys-clock'
 
-    stdout, stderr = src_node.execute(src_cmd)    
+    if verbose:
+        print(src_cmd)
+        
+    src_node.execute(src_cmd)    
     
 
-
-
-def start_owl_capturer(slice, dst_node, img_name, outfile=None, duration = 600, delete_previous=True, dst_addr=None):
+def start_owl_capturer(slice, dst_node, img_name, outfile=None, duration = None, 
+                       delete_previous=True, dst_addr=None, verbose=True):
     """
-    Start OWL capturer inside a Docker container on a remote node by running udp_capturer.py.  
+    Start OWL capturer inside a Docker container on a remote node by running owl_capturer.py.  
     One container instance per node (sometimes serving multiple source nodes).
     Docker container name will be in the form of "owl-capturer_10.0.0.1"
 
@@ -189,12 +197,14 @@ def start_owl_capturer(slice, dst_node, img_name, outfile=None, duration = 600, 
     :type img_name: str
     :param outfile: /path/on/remote/node/to/ouput.pcap (if None, `/home/rocky/owl-output/{dst_ip}.pcap`)
     :type outfile: str
-    :param duration: (default=600) how long (sec) to run OWL
+    :param duration: (default=None) how long (sec) to run OWL
     :type duration: int
     :param delete_previous: (default=True) whether to delete all existing pcap files from previous runs
     :type delete_previous: bool
     :dst_addr: (default=None) Specify destination IP address only if dest node has more than 1 experiment interface
     :type dst_addr: str 
+    :verbose: (default=False) if True, prints docker run command
+    :type verbose: bool
     """
     
     
@@ -231,19 +241,23 @@ def start_owl_capturer(slice, dst_node, img_name, outfile=None, duration = 600, 
     --pid="host" \
     --privileged \
     --name owl-capturer_{dst_ip} \
-    {img_name}  sock_ops/udp_capturer.py \
+    {img_name}  sock_ops/owl_capturer.py \
     --ip {dst_ip} \
     --port 5005 \
-    --outfile /owl_output/{file_name} \
-    --duration {duration}'
+    --outfile /owl_output/{file_name}'
 
-    #print(dst_cmd)
+    if duration:
+        dst_cmd += f' --duration {duration}'
+    
+    if verbose:
+        print(dst_cmd)
+    
     stdout, stderr = dst_node.execute(dst_cmd) 
     
     
     
 def start_owl(slice, src_node, dst_node, img_name, probe_freq=1, no_ptp=False, outfile=None, 
-              duration = 600, delete_previous_output=True, src_addr=None, dst_addr=None):
+              duration = None, delete_previous_output=True, src_addr=None, dst_addr=None):
     """
     Start OWL on a given link defined by source and destination nodes.
 
@@ -257,7 +271,7 @@ def start_owl(slice, src_node, dst_node, img_name, probe_freq=1, no_ptp=False, o
     :type img_name: str
     :param prob_freq: (default=1) interval (sec) at which probe packets are sent
     :type prob_freq: int
-    :param duration: (default=600) how long (sec) to run OWL
+    :param duration: (default=None) how long (sec) to run OWL
     :type duration: int
     :param no_ptp: (default=False) Set this to True only when testing the functionalities on non-PTP node
     :type no_ptp: bool
@@ -271,6 +285,7 @@ def start_owl(slice, src_node, dst_node, img_name, probe_freq=1, no_ptp=False, o
     :type dst_addr: str 
     """
 
+
     print(f'Staring sender on {src_node.get_name()}')
     start_owl_sender(slice,
                      src_node,
@@ -278,6 +293,7 @@ def start_owl(slice, src_node, dst_node, img_name, probe_freq=1, no_ptp=False, o
                      img_name,
                      probe_freq=probe_freq,
                      duration=duration,
+                     no_ptp=no_ptp,
                      src_addr=src_addr,
                      dst_addr=dst_addr)
 
@@ -293,7 +309,8 @@ def start_owl(slice, src_node, dst_node, img_name, probe_freq=1, no_ptp=False, o
     
 
 
-def start_owl_all(slice, img_name, probe_freq=1, outfile=None, duration=600, delete_previous=True):
+def start_owl_all(slice, img_name, probe_freq=1, outfile=None, duration=None, 
+                  no_ptp=False, delete_previous=True):
     """
     Start OWL on all possible combination of nodes in the slice. It asssumes there is only 1 
     experimenter's network interface on each node (exclu. meas-net interface)
@@ -310,7 +327,7 @@ def start_owl_all(slice, img_name, probe_freq=1, outfile=None, duration=600, del
     :type prob_freq: int
     :param outfile: /path/on/remote/node/to/ouput.pcap (if None, `/home/rocky/owl-output/{dst_ip}.pcap`)
     :type outfile: str
-    :param duration: (default=600) how long (sec) to run OWL
+    :param duration: (default=None) how long (sec) to run OWL
     :type duration: int
     :param no_ptp: (default=False) Set this to True only when testing the functionalities on non-PTP node
     :type no_ptp: bool
@@ -324,27 +341,33 @@ def start_owl_all(slice, img_name, probe_freq=1, outfile=None, duration=600, del
     all_links = [link for link in products if link[0]!=link[1]]
 
 
+    # Start capturer on each node
+    for node in nodes:
+        print(f'Staring capturer on {node.get_name()}')
+        start_owl_capturer(slice,
+                           node,
+                           img_name,
+                           outfile=outfile,
+                           duration=duration,
+                           delete_previous=delete_previous)
+
+
+    # Start senders on each node
     for link in all_links:
 
         src_node = link[0]
         dst_node = link[1]
-        print(f"{src_node.get_name()} --> {dst_node.get_name()}")
-              
-        print('Staring sender')
+        print(f"Starting sender: {src_node.get_name()} --> {dst_node.get_name()}")
+
         start_owl_sender(slice,
                          src_node,
                          dst_node,
                          img_name,
                          probe_freq=probe_freq,
+                         no_ptp=no_ptp,
                          duration=duration)
         
-        print(f'Staring capturer')
-        start_owl_capturer(slice,
-                           dst_node,
-                           img_name,
-                           outfile=outfile,
-                           duration=duration,
-                           delete_previous=delete_previous)
+
 
 def stop_owl_sender(slice, src_node, dst_node, src_addr=None, dst_addr=None):
     """
@@ -356,9 +379,11 @@ def stop_owl_sender(slice, src_node, dst_node, src_addr=None, dst_addr=None):
     :type src_node: fablib.Node
     :param dst_node: destination (capturer) node
     :type dst_node: fablib.Node
-    :src_addr: (default=None) Specify source IP address only if source node has more than 1 experiment interface
+    :src_addr: (default=None) Specify source IP address only if source node has 
+               more than 1 experiment interface
     :type src_addr: str 
-    :dst_addr: (default=None) Specify destination IP address only if dest node has more than 1 experiment interface
+    :dst_addr: (default=None) Specify destination IP address only if dest node 
+               has more than 1 experiment interface
     :type dst_addr: str 
     """
     
@@ -379,7 +404,8 @@ def stop_owl_capturer(slice, dst_node, dst_addr=None):
     :type slice: fablib.Slice
     :param dst_node: destination (capturer) node
     :type dst_node: fablib.Node
-    :dst_addr: (default=None) Specify destination IP address only if dest node has more than 1 experiment interface
+    :dst_addr: (default=None) Specify destination IP address only if dest node 
+               has more than 1 experiment interface
     :type dst_addr: str 
     """
     
@@ -402,7 +428,9 @@ def stop_owl_all(slice):
     nodes = [node for node in nodes if node.get_name() != 'meas-node']
     for node in nodes:
         node.execute('hostname')
-        node.execute('sudo docker container stop $(sudo docker container ls -q --filter name=owl-*)')
+        node.execute('sudo docker container stop \
+                $(sudo docker container ls -q --filter name=owl-*)')
+
 
 def check_owl_all(slice):
     """
@@ -417,8 +445,8 @@ def check_owl_all(slice):
     
     for node in nodes:
         node.execute('hostname')
-        stdout, stderr = node.execute('sudo docker ps -a')
-        
+        node.execute('sudo docker ps -a')
+
         
 def download_output(node, local_out_dir):
     """
@@ -436,7 +464,7 @@ def download_output(node, local_out_dir):
 
     try:
         os.makedirs(local_dir)
-    except(FileExistsError):
+    except FileExistsError:
         print("directory exists.")
 
     # get the list of files on the remote dir  
@@ -449,25 +477,25 @@ def download_output(node, local_out_dir):
         print("no output files found")
         return
 
-    else:
-        # This is necessary due to permissions
-        node.execute('mkdir -p /tmp/owl_copy')
+    # This is necessary due to permissions
+    node.execute('mkdir -p /tmp/owl_copy')
 
-        for file_name in files:
-            local_path = os.path.join(local_dir, file_name)
-            remote_path = os.path.join(remote_out_dir, file_name)
+    for file_name in files:
+        local_path = os.path.join(local_dir, file_name)
+        remote_path = os.path.join(remote_out_dir, file_name)
 
-            remote_tmp_path = os.path.join('/tmp/owl_copy', file_name)
+        remote_tmp_path = os.path.join('/tmp/owl_copy', file_name)
 
-            node.execute(f"sudo cp {remote_path} {remote_tmp_path}")
-            node.execute(f"sudo chmod 0664 {remote_tmp_path}")
-            node.download_file(local_path, remote_tmp_path)
-            print(f"Downloaded {remote_path} from {node.get_name()} to {local_path}")
+        node.execute(f"sudo cp {remote_path} {remote_tmp_path}")
+        node.execute(f"sudo chmod 0664 {remote_tmp_path}")
+        node.download_file(local_path, remote_tmp_path)
+        print(f"Downloaded {remote_path} from {node.get_name()} to {local_path}")
 
-            node.execute(f"sudo rm {remote_tmp_path}") 
-            
+        node.execute(f"sudo rm {remote_tmp_path}") 
+
+
 def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
-        influxdb_org=None, influxdb_url=None, influxdb_bucket=None):
+        influxdb_org=None, influxdb_url=None, influxdb_bucket=None, desttype="meas_node"):
     """
     Send OWL pcap data to InfluxDB in a remote server.
     Invokes OWL container to call parse_and_send() in MF's sock_ops/send_data.py.
@@ -484,6 +512,8 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     :type influxdb_org: str
     :param influxdb_url: IP address of the measurement node that has InfluxDB (omit http and port; just have the IP address).
     :type influxdb_url: str
+    :param desttype: Destination type, or where InfluxDB server lives; "cloud" or "meas_node".
+    :type influxdb_bucket: str
     :param influxdb_bucket: InfluxDB bucket ID.
     :type influxdb_bucket: str
     """
@@ -492,9 +522,14 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
 
     targetdir = "/owl-output/"
     pcapfile = targetdir + pcapfile
-    influxdb_org = "my-org"
-    port = "8086"
-    influxdb_url = influxdb_url +  ":" + port
+
+    if not influxdb_org:
+        influxdb_org = "my-org"
+
+    if desttype == "meas_node":
+        port = "8086"
+        influxdb_url = influxdb_url +  ":" + port
+
     dir_name = "/home/rocky/owl-output/"
     cmd = f'sudo docker run -d --rm \
     --mount type=bind,source={dir_name},target={targetdir} \
@@ -507,6 +542,7 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     --token {influxdb_token} \
     --org {influxdb_org} \
     --url {influxdb_url} \
+    --desttype {desttype}\
     --bucket {influxdb_bucket}' 
     
     print(f"In the pcap sender node, running the docker command:\n{cmd}\n")
@@ -515,4 +551,16 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
         node.execute(cmd)
     except Exception as exception:
         print(exception)
+
+
+def stop_influxdb_sender(dst_node):
+    """
+    Stops OWL InfluxDB container if there is one running on a remote node.
+
+    :param dst_node: destination (capturer) node
+    :type dst_node: fablib.Node
+    """
+
+    dst_node.execute('sudo docker stop owl-to-influx')
+
 
