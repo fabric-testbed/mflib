@@ -146,13 +146,16 @@ class MFLib(Core):
             this_nodename = node.get_name()
             this_meas_net_interface = None
             this_meas_net = slice.get_l3network(name=f"l3_meas_net_{this_site}")
-            this_meas_net_interfaces = this_meas_net.get_interfaces()
-            if len(this_meas_net_interfaces) > 0:
-                for interface in this_meas_net_interfaces:
-                    if node == interface.get_node():
-                        this_meas_net_interface = interface
-                        break
+            # this_meas_net_interfaces = this_meas_net.get_interfaces()
+            # if len(this_meas_net_interfaces) > 0:
+            #     for interface in this_meas_net_interfaces:
+            #         if node == interface.get_node():
+            #             this_meas_net_interface = interface
+            #             break
 
+            this_meas_net_interface = this_meas_net.get_interface(
+                name=(f"meas_nic_{this_nodename}_{this_site}")
+            )
             if this_meas_net_interface is None:
                 this_meas_net_interface = node.add_component(
                     model="NIC_Basic",
