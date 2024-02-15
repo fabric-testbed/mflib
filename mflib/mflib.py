@@ -485,8 +485,10 @@ class MFLib(Core):
                 # if True:
                 print("Bootstrapping measurement node via ansible...")
                 self.mflib_logger.info("Bootstrapping measurement node via ansible...")
-                self._run_bootstrap_ansible()
-                self._update_bootstrap("bootstrap_ansible", "ok")
+                if self._run_bootstrap_ansible():
+                    self._update_bootstrap("bootstrap_ansible", "ok")
+                else:
+                    return False
 
             self._update_bootstrap("status", "ready")
             print("Inititialization Done.")
