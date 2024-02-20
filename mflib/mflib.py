@@ -46,7 +46,9 @@ class MFLib(Core):
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
 
-    mflib_class_version = "1.0.39"
+    mflib_class_version = "1.0.40"
+    __version__ = mflib_class_version
+    __VERSION__ = mflib_class_version
 
     def set_mflib_logger(self):
         """
@@ -107,9 +109,8 @@ class MFLib(Core):
         cores=4,
         ram=16,
         disk=500,
-        network_type="FABNetv4",
         site="EDC",
-        image="default_ubuntu_20",
+        image="docker_ubuntu_20",
     ):
         """
         Adds Measurement node and measurement network to an unsubmitted slice object.
@@ -123,40 +124,77 @@ class MFLib(Core):
             site (string, optional): _description_. Defaults to NCSA.
         """
         interfaces = {}
+        meas_nodename = "meas-node"
+        meas_node = None
+        meas_interface = None
+        meas_net = None
+        meas_site = site
+
+        # Create L3 meas net at each site of the slice
         for node in slice.get_nodes():
             this_site = node.get_site()
-            if this_site not in interfaces.keys():
-                interfaces[this_site] = []
+            if slice.get_l3network(name=f"l3_meas_net_{this_site}") is None:
+                slice.add_l3network(name=f"l3_meas_net_{this_site}", type="IPv4")
+
+        # Create L3 meas net at meas node site of the slice
+        meas_net = slice.get_l3network(name=f"l3_meas_net_{meas_site}")
+        if meas_net is None:
+            meas_net = slice.add_l3network(name=f"l3_meas_net_{meas_site}", type="IPv4")
+
+        for node in slice.get_nodes():
+            this_site = node.get_site()
             this_nodename = node.get_name()
-            this_interface = node.add_component(
-                model="NIC_Basic", name=(f"meas_nic_{this_nodename}_{this_site}")
+            this_meas_net_interface = None
+            this_meas_net = slice.get_l3network(name=f"l3_meas_net_{this_site}")
+            # this_meas_net_interfaces = this_meas_net.get_interfaces()
+            # if len(this_meas_net_interfaces) > 0:
+            #     for interface in this_meas_net_interfaces:
+            #         if node == interface.get_node():
+            #             this_meas_net_interface = interface
+            #             break
+
+            this_meas_net_interface = this_meas_net.get_interface(
+                name=(f"meas_nic_{this_nodename}_{this_site}")
+            )
+            if this_meas_net_interface is None:
+                this_meas_net_interface = node.add_component(
+                    model="NIC_Basic",
+                    name=(f"meas_nic_{this_nodename}_{this_site}"),
+                ).get_interfaces()[0]
+                this_meas_net_interface.set_mode("auto")
+                this_meas_net.add_interface(this_meas_net_interface)
+            node.add_route(
+                subnet=meas_net.get_subnet(), next_hop=this_meas_net.get_gateway()
+            )
+
+        try:
+            meas_node = slice.get_node(name=meas_nodename)
+        except Exception as e:
+            if "Node not found" in str(e):
+                meas_node = slice.add_node(name=meas_nodename, site=meas_site)
+                meas_node.set_capacities(cores=cores, ram=ram, disk=disk)
+                meas_node.set_image(image)
+                meas_interface = meas_node.add_component(
+                    model="NIC_Basic",
+                    name=(f"meas_nic_{meas_nodename}_{meas_site}"),
+                ).get_interfaces()[0]
+                meas_interface.set_mode("auto")
+                meas_net.add_interface(meas_interface)
+            else:
+                print(f"Exception: {e}")
+                # traceback.print_exc()
+        meas_node.add_route(
+            subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+        )
+
+        if len(meas_net.get_interfaces()) == 0:
+            meas_interface = meas_node.add_component(
+                model="NIC_Basic",
+                name=(f"meas_nic_{meas_nodename}_{meas_site}"),
             ).get_interfaces()[0]
-            (interfaces[this_site]).append(this_interface)
+            meas_interface.set_mode("auto")
+            meas_net.add_interface(meas_interface)
 
-        # Note this is also defined in self.measurement_node_name but we are in a static method
-        meas_nodename = "meas-node"
-
-        meas_image = image
-        meas = slice.add_node(name=meas_nodename, site=site)
-
-        meas.set_capacities(cores=cores, ram=ram, disk=disk)
-        meas.set_image(meas_image)
-        if site not in interfaces.keys():
-            interfaces[site] = []
-        if network_type == "FABNetv4":
-            meas_interface = meas.add_component(
-                model="NIC_Basic", name=(f"meas_nic_{meas_nodename}_{site}")
-            ).get_interfaces()[0]
-            (interfaces[site]).append(meas_interface)
-
-            for site in interfaces.keys():
-                slice.add_l3network(
-                    name=f"l3_meas_net_{site}", interfaces=interfaces[site]
-                )
-        else:
-            logging.info(f"Unknown {network_type} Network type")
-            return False
-        # This logging will appear in the fablib log.
         logging.info(
             f'Added Meas node & network to slice "{slice.get_name()}" topology. Cores: {cores}  RAM: {ram}GB Disk {disk}GB'
         )
@@ -390,21 +428,6 @@ class MFLib(Core):
                     return False
 
             #######################
-            # Set ipv6 to ipv4 DNS
-            #######################
-            # if "ipv6_4_nat" in bss and (
-            #     bss["ipv6_4_nat"] == "set" or bss["ipv6_4_nat"] == "not_needed"
-            # ):
-            #     msg = f"NAT64 Workaround not needed..."
-            #     print(msg)
-            #     self.mflib_logger.info(msg)
-            # else:
-            #     # if True:
-            #     nat_set_results = self.set_DNS_all_nodes()
-            #     self.mflib_logger.info(f"ipv6_4_nat: {nat_set_results}")
-            #     self._update_bootstrap("ipv6_4_nat", nat_set_results)
-
-            #######################
             # Clone mf repo
             #######################
             if "repo_cloned" in bss and bss["repo_cloned"] == "ok":
@@ -462,8 +485,10 @@ class MFLib(Core):
                 # if True:
                 print("Bootstrapping measurement node via ansible...")
                 self.mflib_logger.info("Bootstrapping measurement node via ansible...")
-                self._run_bootstrap_ansible()
-                self._update_bootstrap("bootstrap_ansible", "ok")
+                if self._run_bootstrap_ansible():
+                    self._update_bootstrap("bootstrap_ansible", "ok")
+                else:
+                    return False
 
             self._update_bootstrap("status", "ready")
             print("Inititialization Done.")
@@ -563,48 +588,33 @@ class MFLib(Core):
 
         for network in networks:
             network_name = network.get_name()
-            network_type = network.get_type()
-            if str(network_type) == "FABNetv4" and network_name.startswith(
-                "l3_meas_net_"
-            ):
+            if network_name.startswith("l3_meas_net_"):
                 network_site = network.get_site()
-                network_subnet = network.get_subnet()
                 interfaces = network.get_interfaces()
-                available_ips = network.get_available_ips()
                 for interface in interfaces:
-                    ip_addr = available_ips.pop(0)
-                    interface.ip_addr_add(addr=ip_addr, subnet=network_subnet)
-                    interface.ip_link_up()
-                    node = interface.get_node()
-                    if node.get_reservation_id() == meas_node.get_reservation_id():
-                        for other_network in networks:
-                            if other_network.get_name() == network_name:
-                                continue
-                            if str(
-                                other_network.get_type()
-                            ) == "FABNetv4" and other_network.get_name().startswith(
-                                "l3_meas_net_"
-                            ):
-                                node.ip_route_add(
-                                    subnet=other_network.get_subnet(),
-                                    gateway=network.get_gateway(),
-                                )
-                    else:
-                        node.ip_route_add(
-                            subnet=meas_net_subnet, gateway=network.get_gateway()
-                        )
+                    this_node = interface.get_node()
+                    ip_addr = interface.get_ip_addr()
+                    if ip_addr in ("", None):
+                        # Fablib has failed to configure this node
+                        # Force configure
+                        this_node.config()
+                        ip_addr = interface.get_ip_addr()
                     hosts.append(
-                        f"{node.get_name()} "
+                        f"{this_node.get_name()} "
                         f"ansible_host={ip_addr} "
                         f"hostname={ip_addr} "
                         f"ansible_ssh_user={mfuser} "
                         f"node_exporter_listen_ip={ip_addr} "
                         f"ansible_ssh_common_args='-o StrictHostKeyChecking=no' "
-                        f'management_ip_type="{node.validIPAddress(node.get_management_ip())}"'
+                        f'management_ip_type="{this_node.validIPAddress(this_node.get_management_ip())}"'
                     )
 
         # Prometheus e_Elk
-        hosts_txt = ""
+        hosts_txt = f"""
+[all:vars]
+ansible_ssh_private_key_file=/home/mfuser/.ssh/mfuser_private_key
+
+"""
         # e_hosts_txt = ""
         hosts_tail = f"""
 
@@ -683,64 +693,6 @@ Experiment_Nodes
             self.mflib_logger.error(msg)
             return "", ""
 
-    # IPV6 to IPV4 only sites fix
-    # note: should set bootstrap status file when making these 2 calls, status should be set, restored, not needed.
-    # def set_DNS_all_nodes(self):
-    #     """
-    #     Sets DNS for nodes to allow them to access ipv4 networks.
-
-    #     Returns:
-    #         string: "set" if DNS set, "not needed" otherwise.
-    #     """
-    #     # Check if we need to
-    #     # if self.meas_node.validIPAddress(self.meas_node.get_management_ip()) == "IPv6":
-    #     nat64_set = False
-    #     for node in self.slice.get_nodes():
-    #         if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #             self.set_DNS(node)
-    #             nat64_set = True
-
-    #     if nat64_set:
-    #         return "set"
-    #     else:
-    #         return "not needed"
-
-    # def restore_DNS_all_nodes(self):
-    #     """
-    #     Restores the DNS to default if previously set. See set_DNS_all_nodes.
-
-    #     Returns:
-    #         string: "restored" if restored, "not needed" if not needed
-    #     """
-    #     # Check if we need to
-    #     nat64_restored = False
-    #     for node in self.slice.get_nodes():
-    #         if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #             self.restore_DNS(node)
-    #             nat64_restored = True
-    #     if nat64_restored:
-    #         return "restored"
-    #     else:
-    #         return "not needed"
-
-    # def set_DNS(self, node):
-    #     """
-    #     Sets the DNS on IPv6 only nodes to enable access to IPv4 sites.
-    #     """
-    #     if node.validIPAddress(node.get_management_ip()) == "IPv6":
-    #         # needed to fix sudo unable to resolve error
-    #         commands = """
-    #         sudo echo -n "127.0.0.1 " | sudo cat - /etc/hostname  | sudo tee -a /etc/hosts;
-    #         sudo echo -n "2a01:4f9:c010:3f02:64:0:b9c7:6e85       objects.githubusercontent.com\n"|sudo tee -a /etc/hosts;
-    #         """
-    #         stdout, stderr = node.execute(commands, quiet=True)
-    #         self.mflib_logger.info(f"STDOUT: {stdout}")
-    #         if stderr:
-    #             self.mflib_logger.error(f"STDERR: {stderr}")
-
-    # def restore_DNS(self, node):
-    #     return
-
     def _set_all_hosts_file(self):
         meas_node_meas_net_ip = None
         for interface in self.meas_node.get_interfaces():
@@ -748,9 +700,6 @@ Experiment_Nodes
                 meas_node_meas_net_ip = interface.get_ip_addr()
         if meas_node_meas_net_ip:
             execute_threads = {}
-            # cmd = f'sudo echo -n "{meas_node_meas_net_ip} {self.measurement_node_name}" | sudo tee -a /etc/hosts;'
-            # TODO WARNING hardcoded _meas_node name here to match existing docker container needs. Need to update
-            # cmd = f'sudo echo -n "{meas_node_meas_net_ip} _meas_node" | sudo tee -a /etc/hosts;'
             cmd = f'sudo echo -n "{meas_node_meas_net_ip} {self.measurement_node_name}\n" | sudo tee -a /etc/hosts; sudo echo -n "{meas_node_meas_net_ip} _meas_node\n" | sudo tee -a /etc/hosts;'
             for node in self.slice.get_nodes():
                 execute_threads[node] = node.execute_thread(cmd)
