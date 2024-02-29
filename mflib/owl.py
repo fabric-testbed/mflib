@@ -75,7 +75,8 @@ def get_node_ip_addr(slice, node_name):
         
         if 'l3_meas_net' not in network:
             return str(interface.get_ip_addr())
-    
+
+    return None
 
 
 def nodes_ip_addrs(slice):
