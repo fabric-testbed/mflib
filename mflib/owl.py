@@ -72,9 +72,11 @@ def get_node_ip_addr(slice, node_name):
 
     for interface in interfaces:
         network = interface.toDict()['network']
+        
         if 'l3_meas_net' not in network:
-            node_ip = str(interface.get_ip_addr())
-    return node_ip
+            return str(interface.get_ip_addr())
+
+    return None
 
 
 def nodes_ip_addrs(slice):
