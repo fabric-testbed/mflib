@@ -941,7 +941,7 @@ class Core:
             except ValueError as e:
                 self.core_logger.debug(f"STDOUT: {stdout}")
             if "Bootstrap playbook install failed" in stdout:
-                print("Bootstap ansible scripts Failed. See logs for details")   
+                print("Bootstrap ansible scripts Failed. See logs for details")   
                 return False 
         if stderr:
             self.core_logger.info(f"STDERR: {stderr}")
