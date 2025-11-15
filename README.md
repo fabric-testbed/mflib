@@ -66,6 +66,7 @@ Run the bash script to create the MFLIB.pdf documentation. MFLIB.pdf will be pla
 ```
 ./create_pdf_doc.sh
 ```
+Note you may just hit return for the ? warnings about .svg files. 
 
 ### Distribution Package
 
