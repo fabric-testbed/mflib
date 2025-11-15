@@ -83,6 +83,10 @@ First test the package by uploading to test.pypi.org then test the install.
 ```
 flit publish --repository testpypi 
 ```
+Note that if the package has already been published to testpypi, it cannot be published again until the version is updated. There is not an obvious error for this. Instead you will just get the following error: 
+```
+requests.exceptions.HTTPError: 400 Client Error: Bad Request for url: https://test.pypi.org/legacy/
+```
 Once install is good, upload to PiPy  
 ```
 flit publish
