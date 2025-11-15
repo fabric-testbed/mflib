@@ -21,8 +21,6 @@
 # SOFTWARE.
 #
 
-
-
 from random import randint
 import os.path
 import itertools
@@ -167,7 +165,7 @@ def start_owl_sender(slice, src_node, dst_node, img_name, probe_freq=1,
                 --privileged \
                 --name owl-sender_{src_ip}-{dst_ip} \
                 {img_name}  sock_ops/owl_sender.py  \
-                --ptp-so-file "/MeasurementFramework/user_services/owl/owl/sock_ops/ptp_time.so" \
+                --ptp-so-file "/owl/owl/sock_ops/ptp_time.so" \
                 --dest-ip {dst_ip} --dest-port 5005 --frequency {probe_freq} \
                 --seq-n {num}'
 
@@ -497,7 +495,7 @@ def download_output(node, local_out_dir):
 
 
 def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
-        influxdb_org=None, influxdb_url=None, influxdb_bucket=None, desttype="meas_node"):
+        influxdb_org=None, influxdb_url=None, influxdb_bucket=None, desttype="local"):
     """
     Send OWL pcap data to InfluxDB in a remote server.
     Invokes OWL container to call parse_and_send() in MF's sock_ops/send_data.py.
@@ -512,7 +510,7 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     :type influxdb_token: str
     :param influxdb_org: InfluxDB org name.
     :type influxdb_org: str
-    :param influxdb_url: IP address of the measurement node that has InfluxDB (omit http and port; just have the IP address).
+    :param influxdb_url: InfluxDB URL (if IP address, omit http and port; just have the IP address).
     :type influxdb_url: str
     :param desttype: Destination type, or where InfluxDB server lives; "cloud" or "meas_node".
     :type influxdb_bucket: str
@@ -528,7 +526,7 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     if not influxdb_org:
         influxdb_org = "my-org"
 
-    if desttype == "meas_node":
+    if desttype == "local":
         port = "8086"
         influxdb_url = influxdb_url +  ":" + port
 
@@ -539,7 +537,7 @@ def send_to_influxdb(node, pcapfile, img_name, influxdb_token=None,
     --pid="host" \
     --privileged \
     --name owl-to-influx \
-    {img_name} sock_ops/send_data.py \
+    {img_name} data_ops/send_data.py \
     --pcapfile {pcapfile} \
     --token {influxdb_token} \
     --org {influxdb_org} \
@@ -564,5 +562,4 @@ def stop_influxdb_sender(dst_node):
     """
 
     dst_node.execute('sudo docker stop owl-to-influx')
-
 

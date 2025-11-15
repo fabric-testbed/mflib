@@ -417,7 +417,7 @@ class MFLib(Core):
                     mfusers_install_success = False
 
                 if mfusers_install_success:
-                    self._update_bootstrap("mfusers", "ok")
+                    self._update_bootstrap("mfuser_accounts", "ok")
                     msg = f"Installing mfuser account done."
                     print(msg)
                     self.mflib_logger.info(msg)
