@@ -218,7 +218,8 @@ class MFLib(Core):
         self.mflib_log_handler = None
 
         if slice:
-            self.init(slice, optimize_repos)
+            self.slice = slice
+            self.init(self.slice, optimize_repos)
 
     def init(self, slice, optimize_repos):
         """
