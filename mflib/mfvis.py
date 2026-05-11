@@ -32,7 +32,6 @@ import urllib.parse
 from ipywidgets import VBox, HTML, Output, interactive
 import ipywidgets as widgets
 from IPython.display import display
-from fabrictestbed_extensions.fablib.fablib import FablibManager as fablib_manager
 from mflib.mflib import MFLib
 
 # For testing

@@ -25,13 +25,8 @@
 import json
 import traceback
 import os
-
-from fabrictestbed_extensions.fablib.fablib import FablibManager as fablib_manager
-
-
 import string
 import random
-
 import logging
 
 

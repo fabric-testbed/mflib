@@ -21,7 +21,6 @@
 # SOFTWARE.
 #
 
-from fabrictestbed_extensions.fablib.fablib import FablibManager as fablib_manager
 import json
 from mflib.mflib import MFLib
 import time

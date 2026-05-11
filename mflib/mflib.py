@@ -199,7 +199,7 @@ class MFLib(Core):
 
     def __init__(
         self,
-        slice_name="",
+        slice="",
         local_storage_directory="/tmp/mflib",
         mf_repo_branch="main",
         optimize_repos=False,
@@ -217,10 +217,10 @@ class MFLib(Core):
         )
         self.mflib_log_handler = None
 
-        if slice_name:
-            self.init(slice_name, optimize_repos)
+        if slice:
+            self.init(slice, optimize_repos)
 
-    def init(self, slice_name, optimize_repos):
+    def init(self, slice, optimize_repos):
         """
         Sets up the slice to ensure it can be monitored. Sets up basic software on Measurement Node and experiment nodes.
         Slice must already have a Measurement Node.
@@ -233,14 +233,14 @@ class MFLib(Core):
 
         """
 
-        print(f'Inititializing slice "{slice_name}" for MeasurementFramework.')
-
         ########################
         # Get slice
         ########################
-        self.slice_name = slice_name
+        slice_name = slice.get_name()
 
-        self.slice = fablib.get_slice(name=slice_name)
+        # self.slice = fablib.get_slice(name=slice_name)
+
+        print(f'Inititializing slice "{slice_name}" for MeasurementFramework.')
 
         self.set_mflib_logger()
 
