@@ -26,8 +26,6 @@ import json
 import traceback
 import os
 
-from fabrictestbed_extensions.fablib.fablib import fablib
-
 # For getting vars to make tunnel
 from fabrictestbed_extensions.fablib.fablib import FablibManager
 

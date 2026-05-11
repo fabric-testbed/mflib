@@ -26,7 +26,7 @@ import json
 import traceback
 import os
 
-from fabrictestbed_extensions.fablib.fablib import fablib
+from fabrictestbed_extensions.fablib.fablib import FablibManager as fablib_manager
 
 
 import string
@@ -476,7 +476,7 @@ class Core:
             )
 
     # Utility Methods
-    
+
     def _get_service_list(self):
         """
         Gets a list of all currently existing services
@@ -484,8 +484,10 @@ class Core:
         :rtype: List
         """
         service_list = []
-        stdout, stderr = self.meas_node.execute(f"ls {self.services_directory}", quiet=True)
-        for item in stdout.split('\n'):
+        stdout, stderr = self.meas_node.execute(
+            f"ls {self.services_directory}", quiet=True
+        )
+        for item in stdout.split("\n"):
             if item != "common" and item != "":
                 service_list.append(item)
         return service_list
@@ -729,7 +731,10 @@ class Core:
             if stderr:
                 self.core_logger.debug(f"STDERR: {stderr}")
             return {"success": False, "message": f"Service file upload failed: {e}"}
-        return {"success": True, "message": f"Service file {filename} uploaded successfully."}
+        return {
+            "success": True,
+            "message": f"Service file {filename} uploaded successfully.",
+        }
 
     def _upload_service_directory(self, service, local_directory_path, force=False):
         """
@@ -755,27 +760,47 @@ class Core:
         rand_dir_name = "mf_dir_" + "".join(random.choice(letters) for i in range(10))
         tmp_remote_directory_path = os.path.join("/tmp", rand_dir_name)
 
-        final_remote_directory_path = os.path.join(self.services_directory, service, "files")
-        
-        stdout, stderr = self.meas_node.execute(f"if test -d {final_remote_directory_path}/{local_directory_name}; then echo 'Directory exists'; else echo 'does not exist'; fi", quiet=True)
+        final_remote_directory_path = os.path.join(
+            self.services_directory, service, "files"
+        )
+
+        stdout, stderr = self.meas_node.execute(
+            f"if test -d {final_remote_directory_path}/{local_directory_name}; then echo 'Directory exists'; else echo 'does not exist'; fi",
+            quiet=True,
+        )
         if "Directory exists" in stdout:
             if force:
-                stdout, stderr = self.meas_node.execute(f"sudo rm -rf {final_remote_directory_path}/{local_directory_name}")
+                stdout, stderr = self.meas_node.execute(
+                    f"sudo rm -rf {final_remote_directory_path}/{local_directory_name}"
+                )
             else:
-                return {"success": False, "message": "The selected directory already exists. Run command with force=True to overwrite it."}
-        
+                return {
+                    "success": False,
+                    "message": "The selected directory already exists. Run command with force=True to overwrite it.",
+                }
+
         try:
             # upload directory
-            self.meas_node.upload_directory(local_directory_path, tmp_remote_directory_path)
+            self.meas_node.upload_directory(
+                local_directory_path, tmp_remote_directory_path
+            )
             cmd = f"sudo mv -f {tmp_remote_directory_path}/{local_directory_name} {final_remote_directory_path};  sudo chown mfuser:mfuser {final_remote_directory_path}; sudo rm -rf {tmp_remote_directory_path}"
             stdout, stderr = self.meas_node.execute(cmd)
 
         except Exception as e:
             self.core_logger.exception("Upload service directory failed")
-            if stdout: self.core_logger.debug(f"STDOUT: {stdout}")
-            if stderr: self.core_logger.debug(f"STDERR: {stderr}")
-            return {"success": False, "message": f"Service Directory Upload Failed: {e}"}
-        return {"success": True, "message": f"Service Directory {local_directory_name} uploaded successfully."}
+            if stdout:
+                self.core_logger.debug(f"STDOUT: {stdout}")
+            if stderr:
+                self.core_logger.debug(f"STDERR: {stderr}")
+            return {
+                "success": False,
+                "message": f"Service Directory Upload Failed: {e}",
+            }
+        return {
+            "success": True,
+            "message": f"Service Directory {local_directory_name} uploaded successfully.",
+        }
 
     def _run_service_command(self, service, command):
         """
@@ -861,7 +886,11 @@ class Core:
             file_attributes = self.meas_node.download_file(
                 local_file_path, remote_file_path
             )  # , retry=3, retry_interval=10):
-            return {"success": True, "filename": local_file_path, "message": "uploaded " + filename + " successfully."}
+            return {
+                "success": True,
+                "filename": local_file_path,
+                "message": "uploaded " + filename + " successfully.",
+            }
         except Exception as e:
             self.core_logger.exception()
             return {"success": False, "message": f"Download service file Fail: {e}"}
@@ -880,7 +909,6 @@ class Core:
         msg = f"Cloning Measurement Framework Repository from github.com done."
         self.core_logger.debug(msg)
         print(msg)
-
 
         if stdout:
             self.core_logger.debug(f"STDOUT: {stdout}")
@@ -935,14 +963,13 @@ class Core:
         print(msg)
 
         if stdout:
-            
             try:
                 self.core_logger.debug(f"STDOUT: {json.dumps(stdout, indent=2)}")
             except ValueError as e:
                 self.core_logger.debug(f"STDOUT: {stdout}")
             if "Bootstrap playbook install failed" in stdout:
-                print("Bootstrap ansible scripts Failed. See logs for details")   
-                return False 
+                print("Bootstrap ansible scripts Failed. See logs for details")
+                return False
         if stderr:
             self.core_logger.info(f"STDERR: {stderr}")
 
@@ -964,7 +991,7 @@ class Core:
         if force or not os.path.exists(self.bootstrap_status_file):
             download_success, download_msg = self._download_bootstrap_status()
             if not download_success:
-                return {"msg":download_msg }
+                return {"msg": download_msg}
 
         if os.path.exists(self.bootstrap_status_file):
             if os.stat(self.bootstrap_status_file).st_size == 0:
@@ -1004,8 +1031,10 @@ class Core:
         except Exception as e:
             print(f"rm bootstrap_status.json Failed: {e}")
             self.core_logger.exception(f"rm bootstrap_status.json Failed: {e}")
-            if stdout: self.core_logger.debug(f"STDOUT: {stdout}")
-            if stderr: self.core_logger.debug(f"STDERR: {stderr}")
+            if stdout:
+                self.core_logger.debug(f"STDOUT: {stdout}")
+            if stderr:
+                self.core_logger.debug(f"STDERR: {stderr}")
 
     def _download_bootstrap_status(self):
         """
@@ -1032,11 +1061,11 @@ class Core:
             return True, "File not found"
         except Exception as e:
             msg = f"Bootstrap download has failed. Fail: {e}"
-            #print("Bootstrap download has failed.")
-            #print(f"Fail: {e}")
-            #return {"msg":msg, "success":False}
+            # print("Bootstrap download has failed.")
+            # print(f"Fail: {e}")
+            # return {"msg":msg, "success":False}
             return False, msg
-        #return {}
+        # return {}
 
     def get_mfuser_private_key(self, force=True):
         """
