@@ -42,11 +42,11 @@ class MFVis(MFLib):
     mfvis_class_version = "2.02"
     meas_net_info = {}
 
-    def __init__(self, slice_name="", local_storage_directory="/tmp/mflib"):
+    def __init__(self, slice, local_storage_directory="/tmp/mflib"):
         """
         Constructor. Builds Manager for mfvis object.
         """
-        super().__init__(slice_name, local_storage_directory)
+        super().__init__(slice, local_storage_directory)
         # self._grafana_tunnel_host = ""
         # for current testing should be removed in future
         # self._grafana_tunnel_host = "localhost:10010"
