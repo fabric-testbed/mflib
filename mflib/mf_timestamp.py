@@ -42,6 +42,7 @@ class mf_timestamp:
         Constructor. Builds Manager for mf_timestamp object.
         """
         super().__init__()
+        self.slice = slice
         self.slice_name = slice.get_name()
         self.container_name = container_name
         try:
