@@ -57,11 +57,17 @@ The completed documentation may be accessed by clicking on `/docs/build/html/ind
 
 #### Build PDF Document
 Latex must be installed. For Debian use: 
-```
-sudo apt install texlive-latex-extra 
-sudo apt install latexmk
+~~Latex must be installed. For Debian use:~~ 
 
+~~sudo apt install texlive-latex-extra~~ 
+~~sudo apt install latexmk~~
+
+Changed to conda install for environments with out sudo access.
 ```
+conda install -c conda-forge tectonic
+```
+
+
 Run the bash script to create the MFLIB.pdf documentation. MFLIB.pdf will be placed in the root directory of the repository.
 ```
 ./create_pdf_doc.sh

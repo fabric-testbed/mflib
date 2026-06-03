@@ -9,11 +9,18 @@ then
     rm -rf docs/build/latex
     echo ""
     echo "***** Building PDF documentation files... *****"
-    # Note: Have to run make twice to generate the table of contents and index.
-    make -C docs/ latexpdf
-    make -C docs/ latexpdf
+    # # Note: Have to run make twice to generate the table of contents and index.
+    # make -C docs/ latexpdf
+    # make -C docs/ latexpdf
+    
+    make -C docs/ latex
+
+    cd docs/build/latex
+    tectonic mflib.tex
+    
     echo "Copying PDF to main directory."
-    cp docs/build/latex/mflib.pdf MFLib.pdf
+    cp mflib.pdf ../../../MFLib.pdf
+    #cp docs/build/latex/mflib.pdf MFLib.pdf
     echo "***** Done *****"
 else
     echo "Aborting, nothing done."
