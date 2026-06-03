@@ -21,7 +21,6 @@
 # SOFTWARE.
 #
 
-from fabrictestbed_extensions.fablib.fablib import fablib
 import json
 from mflib.mflib import MFLib
 import time
@@ -32,7 +31,9 @@ class ImportTool:
     Parent class for import classes (Elk and Prometheus)
     """
 
-    def __init__(self, node, service, git_repo_path='/home/ubuntu/mf-data-import-containers'):
+    def __init__(
+        self, node, service, git_repo_path="/home/ubuntu/mf-data-import-containers"
+    ):
         """
         Constructor
         Args:
@@ -43,13 +44,13 @@ class ImportTool:
         self.repo_path = git_repo_path
         self.node = node
         self.service = service
-    
+
     def setup_docker_app(self, node_name):
         """
         Runs the 3 commands needed to set up the docker-compose app
         """
         self.install_docker()
-        #self.setup_nat64(node_name)
+        # self.setup_nat64(node_name)
         self.clone_repository()
 
     def install_docker(self):
@@ -57,11 +58,11 @@ class ImportTool:
         Installs Docker and Docker-Compose then prints their versions.
         """
         commands = [
-            'sudo apt-get update',
-            'sudo apt-get install docker -y',
-            'sudo apt-get install docker-compose -y',
-            'sudo docker -v',
-            'sudo docker-compose -v'
+            "sudo apt-get update",
+            "sudo apt-get install docker -y",
+            "sudo apt-get install docker-compose -y",
+            "sudo docker -v",
+            "sudo docker-compose -v",
         ]
         try:
             for command in commands:
@@ -79,7 +80,7 @@ class ImportTool:
             "sudo sed -i '/nameserver/d' /etc/resolv.conf",
             "sudo sh -c 'echo nameserver 2a00:1098:2c::1 >> /etc/resolv.conf'",
             "sudo sh -c 'echo nameserver 2a01:4f8:c2c:123f::1 >> /etc/resolv.conf'",
-            "sudo sh -c 'echo nameserver 2a00:1098:2b::1 >> /etc/resolv.conf'"
+            "sudo sh -c 'echo nameserver 2a00:1098:2b::1 >> /etc/resolv.conf'",
         ]
         for command in commands:
             try:
@@ -92,9 +93,9 @@ class ImportTool:
         Clones the data-import docker-container repository from GitHub.
         """
         try:
-
             self.node.execute(
-                f'sudo git clone https://github.com/fabric-testbed/mf-data-import-containers.git {self.repo_path}')
+                f"sudo git clone https://github.com/fabric-testbed/mf-data-import-containers.git {self.repo_path}"
+            )
         except Exception as e:
             print(f"Fail: {e}")
 
@@ -103,7 +104,9 @@ class ImportTool:
         Starts the docker-compose app for the current service (Elk or Prometheus).
         """
         try:
-            self.node.execute(f'sudo docker-compose -f {self.repo_path}/{self.service}/docker-compose.yml up -d')
+            self.node.execute(
+                f"sudo docker-compose -f {self.repo_path}/{self.service}/docker-compose.yml up -d"
+            )
         except Exception as e:
             print(f"Fail: {e}")
 
@@ -112,11 +115,19 @@ class ImportTool:
         Stops the docker-compose app for the current service (Elk or Prometheus).
         """
         try:
-            self.node.execute(f'sudo docker-compose -f {self.repo_path}/{self.service}/docker-compose.yml down')
+            self.node.execute(
+                f"sudo docker-compose -f {self.repo_path}/{self.service}/docker-compose.yml down"
+            )
         except Exception as e:
             print(f"Fail: {e}")
-            
-    def generate_scp_upload_command(self, snapshot_name, directory_path, ssh_config="ssh_config", private_key="slice_key"):
+
+    def generate_scp_upload_command(
+        self,
+        snapshot_name,
+        directory_path,
+        ssh_config="ssh_config",
+        private_key="slice_key",
+    ):
         """
         Creates the command to upload your snapshot file to the node VIA SCP.
         Args:
@@ -137,7 +148,10 @@ class ElkExporter(MFLib):
     """
     Tool for Exporting ELK snapshots.
     """
-    def __init__(self, slice_name="", local_storage_directory="/tmp/mflib", node_name="meas-node"):
+
+    def __init__(
+        self, slice_name="", local_storage_directory="/tmp/mflib", node_name="meas-node"
+    ):
         """
         Constructor
         Args:
@@ -189,8 +203,8 @@ class ElkExporter(MFLib):
         """
         self._ensure_dir_permissions()
         commands = [
-            'sudo mkdir -p /home/mfuser/services/elk/files/snapshots',
-            f'sudo tar -cvf /home/mfuser/services/elk/files/snapshots/{snapshot_name}.tar -C /var/lib/docker/volumes/elk_snapshotbackup .',
+            "sudo mkdir -p /home/mfuser/services/elk/files/snapshots",
+            f"sudo tar -cvf /home/mfuser/services/elk/files/snapshots/{snapshot_name}.tar -C /var/lib/docker/volumes/elk_snapshotbackup .",
         ]
         for command in commands:
             try:
@@ -204,8 +218,8 @@ class ElkExporter(MFLib):
         Gives the ELK docker volume permission to be exported.
         """
         commands = [
-            'sudo chown -R 1000:1000 /var/lib/docker/volumes/elk_snapshotbackup',
-            'sudo chown -R 1000:1000 /var/lib/docker/volumes/elk_snapshotbackup/_data',
+            "sudo chown -R 1000:1000 /var/lib/docker/volumes/elk_snapshotbackup",
+            "sudo chown -R 1000:1000 /var/lib/docker/volumes/elk_snapshotbackup/_data",
         ]
         for command in commands:
             try:
@@ -222,7 +236,6 @@ class ElkExporter(MFLib):
             self.node.execute(cmd)
         except Exception as e:
             print(f"Fail: {e}")
-
 
     def view_repository(self, repository_name):
         """
@@ -249,8 +262,8 @@ class ElkExporter(MFLib):
         Show ELK tar files available inside snapshot directory on meas_node
         """
         commands = [
-            'echo snapshots in directory on measurement node:',
-            'ls /home/mfuser/services/elk/files/snapshots/'
+            "echo snapshots in directory on measurement node:",
+            "ls /home/mfuser/services/elk/files/snapshots/",
         ]
         for command in commands:
             try:
@@ -258,7 +271,13 @@ class ElkExporter(MFLib):
             except Exception as e:
                 print(f"Fail: {e}")
 
-    def generate_scp_download_command(self, snapshot_name, local_destination, ssh_config="ssh_config", private_key="slice_key"):
+    def generate_scp_download_command(
+        self,
+        snapshot_name,
+        local_destination,
+        ssh_config="ssh_config",
+        private_key="slice_key",
+    ):
         """
         Creates the command to download your snapshot file from the meas_node to local pc.
         Args:
@@ -279,7 +298,10 @@ class PrometheusExporter(MFLib):
     """
     Tool for Exporting Prometheus snapshots.
     """
-    def __init__(self, slice_name, local_storage_directory="/tmp/mflib", node_name="meas-node"):
+
+    def __init__(
+        self, slice_name, local_storage_directory="/tmp/mflib", node_name="meas-node"
+    ):
         """
         Constructor
         Args:
@@ -305,7 +327,8 @@ class PrometheusExporter(MFLib):
         """
         try:
             stdout = self.node.execute(
-                f'sudo curl -k -u {user}:{password} -XPOST https://localhost:9090/api/v1/admin/tsdb/snapshot?skip_head=false')
+                f"sudo curl -k -u {user}:{password} -XPOST https://localhost:9090/api/v1/admin/tsdb/snapshot?skip_head=false"
+            )
             return json.loads(stdout[0])["data"]["name"]
         except Exception as e:
             print(f"Fail: {e}")
@@ -317,8 +340,8 @@ class PrometheusExporter(MFLib):
             snapshot_name (str): Name of snapshot to export
         """
         commands = [
-            'sudo mkdir -p /home/mfuser/services/prometheus/files/snapshots',
-            f'sudo tar -cvf /home/mfuser/services/prometheus/files/snapshots/{snapshot_name}.tar -C /opt/data/fabric_prometheus/prometheus/snapshots .',
+            "sudo mkdir -p /home/mfuser/services/prometheus/files/snapshots",
+            f"sudo tar -cvf /home/mfuser/services/prometheus/files/snapshots/{snapshot_name}.tar -C /opt/data/fabric_prometheus/prometheus/snapshots .",
         ]
         for command in commands:
             try:
@@ -332,8 +355,8 @@ class PrometheusExporter(MFLib):
         Show Prometheus tar files available inside snapshot directory on meas_node
         """
         commands = [
-            'echo snapshots in directory on measurement node:',
-            'ls /home/mfuser/services/prometheus/files/snapshots/'
+            "echo snapshots in directory on measurement node:",
+            "ls /home/mfuser/services/prometheus/files/snapshots/",
         ]
         for command in commands:
             try:
@@ -341,7 +364,13 @@ class PrometheusExporter(MFLib):
             except Exception as e:
                 print(f"Fail: {e}")
 
-    def generate_scp_download_command(self, snapshot_name, local_destination, ssh_config="ssh_config", private_key="slice_key"):
+    def generate_scp_download_command(
+        self,
+        snapshot_name,
+        local_destination,
+        ssh_config="ssh_config",
+        private_key="slice_key",
+    ):
         """
         Creates the command to download your snapshot file from the meas_node to local pc.
         Args:
@@ -362,7 +391,13 @@ class ElkImporter(ImportTool):
     """
     Tool for Importing ELK snapshots.
     """
-    def __init__(self, slice_name, node_name, git_repo_path='/home/ubuntu/mf-data-import-containers'):
+
+    def __init__(
+        self,
+        slice_name,
+        node_name,
+        git_repo_path="/home/ubuntu/mf-data-import-containers",
+    ):
         """
         Constructor
         Args:
@@ -382,7 +417,7 @@ class ElkImporter(ImportTool):
         except Exception as e:
             print(f"Fail: {e}")
         super().__init__(self.node, "elk", git_repo_path)
-        
+
     def upload_snapshot(self, snapshot_file_name):
         """
         Uploads snapshot tar file into meas_node tmp directory.
@@ -391,11 +426,14 @@ class ElkImporter(ImportTool):
         snapshot_file_name(str): ELK snapshot tar file name
         """
         try:
-            self.node.execute(f"echo uploading {snapshot_file_name} to measurement node..")
-            self.node.upload_file(f"./snapshots/{snapshot_file_name}", f'/tmp/{snapshot_file_name}')
+            self.node.execute(
+                f"echo uploading {snapshot_file_name} to measurement node.."
+            )
+            self.node.upload_file(
+                f"./snapshots/{snapshot_file_name}", f"/tmp/{snapshot_file_name}"
+            )
         except Exception as e:
             print(f"Fail: {e}")
-
 
     def import_snapshot(self, snapshot_file_name):
         """
@@ -410,7 +448,7 @@ class ElkImporter(ImportTool):
             "echo 'Moving snapshot file..'",
             f"sudo mv /tmp/{snapshot_file_name} {self.repo_path}/{self.service}/snapshots/",
             "echo 'Untarring snapshot data into shared docker volume..'",
-            f"sudo tar -xvf {self.repo_path}/{self.service}/snapshots/{snapshot_file_name} -C {self.repo_path}/{self.service}/imported_data"
+            f"sudo tar -xvf {self.repo_path}/{self.service}/snapshots/{snapshot_file_name} -C {self.repo_path}/{self.service}/imported_data",
         ]
         for command in commands:
             try:
@@ -420,9 +458,9 @@ class ElkImporter(ImportTool):
 
     def register_repository(self, repository_name):
         """
-            You must register a repository before you can take or restore snapshots.
-            Args:
-                repository_name(str): Name of repository to register
+        You must register a repository before you can take or restore snapshots.
+        Args:
+            repository_name(str): Name of repository to register
         """
         cmd = f'curl -X PUT -H "Content-Type: application/json" -d \'{{"type": "fs", "settings": {{"location": "/usr/share/elasticsearch/imported_data/_data", "compress": true }} }}\' http://localhost:9200/_snapshot/{repository_name}'
         try:
@@ -437,8 +475,10 @@ class ElkImporter(ImportTool):
             repository_name(str): ELK Repository name
             snapshot_name(str): ELK Snapshot name
         """
-        cmds = ['curl -X DELETE "http://localhost:9200/_all"',
-                f'curl -X POST "http://localhost:9200/_snapshot/{repository_name}/{snapshot_name}/_restore?pretty" -H "Content-Type: application/json" -d \'{{"indices": "*","rename_pattern": "(.+)","rename_replacement": "restored-$1"}}\'']
+        cmds = [
+            'curl -X DELETE "http://localhost:9200/_all"',
+            f'curl -X POST "http://localhost:9200/_snapshot/{repository_name}/{snapshot_name}/_restore?pretty" -H "Content-Type: application/json" -d \'{{"indices": "*","rename_pattern": "(.+)","rename_replacement": "restored-$1"}}\'',
+        ]
         for cmd in cmds:
             try:
                 self.node.execute(cmd)
@@ -450,8 +490,8 @@ class ElkImporter(ImportTool):
         Deletes the docker volume and snapshot directory so that you can add new data.
         """
         commands = [
-            'sudo docker volume rm elk_es-data',
-            f'sudo rm -rf {self.repo_path}/{self.service}/imported_data/*'
+            "sudo docker volume rm elk_es-data",
+            f"sudo rm -rf {self.repo_path}/{self.service}/imported_data/*",
         ]
         try:
             for command in commands:
@@ -494,7 +534,13 @@ class PrometheusImporter(ImportTool):
     """
     Tool for Importing Prometheus snapshots.
     """
-    def __init__(self, slice_name, node_name, git_repo_path='/home/ubuntu/mf-data-import-containers'):
+
+    def __init__(
+        self,
+        slice_name,
+        node_name,
+        git_repo_path="/home/ubuntu/mf-data-import-containers",
+    ):
         """
         Constructor
         Args:
@@ -523,7 +569,7 @@ class PrometheusImporter(ImportTool):
         """
         commands = [
             "echo 'Importing snapshot into Prometheus..'",
-            f"sudo {self.repo_path}/{self.service}/import_snapshot.sh /tmp/{snapshot_file_name} {self.repo_path}/{self.service}/snapshots"
+            f"sudo {self.repo_path}/{self.service}/import_snapshot.sh /tmp/{snapshot_file_name} {self.repo_path}/{self.service}/snapshots",
         ]
         for command in commands:
             try:
@@ -536,8 +582,8 @@ class PrometheusImporter(ImportTool):
         Deletes the docker volume and snapshot directory so that you can add new data.
         """
         commands = [
-            'sudo docker volume rm prometheus_prom_data',
-            f'sudo rm -rf {self.repo_path}/{self.service}/snapshots'
+            "sudo docker volume rm prometheus_prom_data",
+            f"sudo rm -rf {self.repo_path}/{self.service}/snapshots",
         ]
         try:
             for command in commands:
