@@ -9,12 +9,9 @@ then
     rm -rf docs/build/latex
     echo ""
     echo "***** Building PDF documentation files... *****"
-    # # Note: Have to run make twice to generate the table of contents and index.
-    # make -C docs/ latexpdf
-    # make -C docs/ latexpdf
-    
+ 
     make -C docs/ latex
-
+    
     cd docs/build/latex
     tectonic mflib.tex
     
