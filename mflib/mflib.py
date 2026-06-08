@@ -42,10 +42,15 @@ class MFLib(Core):
     """
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
-    FM = FablibManager()
     mflib_class_version = "1.0.41"
     __version__ = mflib_class_version
     __VERSION__ = mflib_class_version
+
+    @property
+    def FM(self):
+        if self._FM is None:
+            self._FM = FablibManager()
+        return self._FM
 
     def set_mflib_logger(self):
         """
@@ -214,6 +219,7 @@ class MFLib(Core):
             local_storage_directory=local_storage_directory,
             mf_repo_branch=mf_repo_branch,
         )
+        self._FM = None
         self.mflib_log_handler = None
 
         if slice:
