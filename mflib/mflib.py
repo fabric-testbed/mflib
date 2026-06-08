@@ -26,7 +26,6 @@ import json
 import traceback
 import os
 
-# For getting vars to make tunnel
 from fabrictestbed_extensions.fablib.fablib import FablibManager
 
 from cryptography.hazmat.primitives import serialization as crypto_serialization
@@ -43,7 +42,7 @@ class MFLib(Core):
     """
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
-
+    FM = FablibManager()
     mflib_class_version = "1.0.41"
     __version__ = mflib_class_version
     __VERSION__ = mflib_class_version
@@ -221,7 +220,7 @@ class MFLib(Core):
             self.slice = slice
             self.init(self.slice, optimize_repos)
 
-    def init(self, slice, optimize_repos):
+    def init(self, slice_name, optimize_repos):
         """
         Sets up the slice to ensure it can be monitored. Sets up basic software on Measurement Node and experiment nodes.
         Slice must already have a Measurement Node.
@@ -237,9 +236,10 @@ class MFLib(Core):
         ########################
         # Get slice
         ########################
-        slice_name = slice.get_name()
+        #slice_name = slice.get_name()
 
-        # self.slice = fablib.get_slice(name=slice_name)
+        #self.slice = fablib.get_slice(name=slice_name)
+        self.slice = self.FM.get_slice(name=slice_name)
 
         print(f'Inititializing slice "{slice_name}" for MeasurementFramework.')
 
