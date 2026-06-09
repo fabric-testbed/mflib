@@ -58,7 +58,7 @@ def list_pcap_files(root_dir):
     
     :param root_dir: Directory that will be treated as root for this search
     :type root_dir: str
-    :return files_list: absolute paths for all the *.pcap files under the root_dir
+    :return: absolute paths for all the ``*.pcap files`` under the root_dir
     :rtype: [posix.Path]
     """
     
