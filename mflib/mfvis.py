@@ -365,9 +365,9 @@ class MFVis(MFLib):
                     os_interface = []
                     interface_matching = {}
                     for interface in node.get_interfaces():
-                        os_interface.append(interface.get_os_interface())
+                        os_interface.append(interface.get_device_name())
                         interface_matching[
-                            interface.get_os_interface()
+                            interface.get_device_name()
                         ] = interface.get_name()
                     self.slice_node_info[node.get_name()].append(os_interface)
                     self.slice_node_info[node.get_name()].append(interface_matching)
