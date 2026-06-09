@@ -26,7 +26,7 @@ import json
 import traceback
 import os
 
-#from fabrictestbed_extensions.fablib.fablib import FablibManager
+from fabrictestbed_extensions.fablib.fablib import FablibManager
 
 from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -186,8 +186,7 @@ class MFLib(Core):
                 print(f"Exception: {e}")
                 # traceback.print_exc()
         meas_node.add_route(
-            #subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
-            subnet=FM.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+            subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
         )
 
         if len(meas_net.get_interfaces()) == 0:
@@ -220,7 +219,7 @@ class MFLib(Core):
             local_storage_directory=local_storage_directory,
             mf_repo_branch=mf_repo_branch,
         )
-        self._FM = None
+        # self._FM = None
         self.mflib_log_handler = None
 
         if slice:

@@ -3,7 +3,7 @@ FABRIC Measurement Framework Python Client Library - Makes monitoring FABRIC Sli
 """
 # release level is a alpha, b beta, rc candidate, dev development, post post,  or f final
 # (major, minor, micro, release level, release build)
-__version_info__ = [1, 0, 8, "b", 2]
+__version_info__ = [1, 0, 8, "f", 0]
 
 __version__ = f"{__version_info__[0]}.{__version_info__[1]}.{__version_info__[2]}"
 
@@ -13,4 +13,3 @@ if __version_info__[3] != "f":
 
 description = "FABRIC Measurement Framework Python Client Library"
 
-from fabrictestbed_extensions.fablib.fablib import FablibManager as FM 
