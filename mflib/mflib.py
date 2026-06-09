@@ -26,7 +26,7 @@ import json
 import traceback
 import os
 
-from fabrictestbed_extensions.fablib.fablib import FablibManager
+#from fabrictestbed_extensions.fablib.fablib import FablibManager
 
 from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -42,15 +42,15 @@ class MFLib(Core):
     """
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
-    mflib_class_version = "1.0.41"
+    mflib_class_version = "1.0.42"
     __version__ = mflib_class_version
     __VERSION__ = mflib_class_version
 
-    @property
-    def FM(self):
-        if self._FM is None:
-            self._FM = FablibManager()
-        return self._FM
+    # @property
+    # def FM(self):
+    #     if self._FM is None:
+    #         self._FM = FablibManager()
+    #     return self._FM
 
     def set_mflib_logger(self):
         """
@@ -186,7 +186,8 @@ class MFLib(Core):
                 print(f"Exception: {e}")
                 # traceback.print_exc()
         meas_node.add_route(
-            subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+            #subnet=FablibManager.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
+            subnet=FM.FABNETV4_SUBNET, next_hop=meas_net.get_gateway()
         )
 
         if len(meas_net.get_interfaces()) == 0:
@@ -226,7 +227,7 @@ class MFLib(Core):
             self.slice = slice
             self.init(self.slice, optimize_repos)
 
-    def init(self, slice_name, optimize_repos):
+    def init(self, slice, optimize_repos):
         """
         Sets up the slice to ensure it can be monitored. Sets up basic software on Measurement Node and experiment nodes.
         Slice must already have a Measurement Node.
@@ -242,10 +243,10 @@ class MFLib(Core):
         ########################
         # Get slice
         ########################
-        #slice_name = slice.get_name()
+        slice_name = slice.get_name()
 
         #self.slice = fablib.get_slice(name=slice_name)
-        self.slice = self.FM.get_slice(name=slice_name)
+        #self.slice = self.FM.get_slice(name=slice_name)
 
         print(f'Inititializing slice "{slice_name}" for MeasurementFramework.')
 

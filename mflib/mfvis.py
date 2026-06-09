@@ -39,7 +39,7 @@ from mflib.mflib import MFLib
 
 
 class MFVis(MFLib):
-    mfvis_class_version = "2.03"
+    mfvis_class_version = "2.04"
     meas_net_info = {}
 
     def __init__(self, slice, local_storage_directory="/tmp/mflib"):
