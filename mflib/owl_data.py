@@ -58,7 +58,7 @@ def list_pcap_files(root_dir):
     
     :param root_dir: Directory that will be treated as root for this search
     :type root_dir: str
-    :return files_list: absolute paths for all the *.pcap files under the root_dir
+    :return: absolute paths for all the ``*.pcap files`` under the root_dir
     :rtype: [posix.Path]
     """
     
@@ -210,7 +210,7 @@ def get_summary(df, src_node, dst_node, src_ip=None, dst_ip=None):
     :param df: latency data
     :type df: Panda Dataframe 
     :param src[dst]_node: source/destination nodes
-    :type src[dst]_node:fablib.Node
+    :type src[dst]_node: fablib.Node
     :param src[dst]_ip: needed only if there are multiple experimenter IP interfaces
     :type src[dst]_ip: str
     """
@@ -245,7 +245,7 @@ def graph_latency_data(df, src_node, dst_node, src_ip=None, dst_ip=None):
     :param df: latency data
     :type df: Panda Dataframe 
     :param src[dst]_node: source/destination nodes
-    :type src[dst]_node:fablib.Node
+    :type src[dst]_node: fablib.Node
     :param src[dst]_ip: needed only if there are multiple experimenter IP interfaces
     :type src[dst]_ip: str
     """       

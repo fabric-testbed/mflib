@@ -10,3 +10,4 @@ plotly
 pandas
 numpy
 matplotlib
+flit

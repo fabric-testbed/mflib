@@ -23,7 +23,7 @@ The **MFLib().addMeasNode(slice)** adds an extra node called the Measurement Nod
 ### Init & Instrumentize
 MFlib works on an existing slice to which MFLib must first add some software and services.
 
-**MFLib(slice_name)**  `mf = MFLib(slice_name, local_storage_directory="/tmp/mflib")` First you must create the MFLib object by passing the slice name to MFLib() . You can optionally pass a string for where you would like the local working files for the slice to be stored. These files include keys, Ansible hosts file, progress and log files and any downloaded files. The default location is in the tmp directory. If you plan on revisiting the slice or the log files later, you should change the directory to a persistent directory of your choosing.  
+**MFLib(slice)**  `mf = MFLib(slice, local_storage_directory="/tmp/mflib")` First you must create the MFLib object by passing the slice object to MFLib() . You can optionally pass a string for where you would like the local working files for the slice to be stored. These files include keys, Ansible hosts file, progress and log files and any downloaded files. The default location is in the tmp directory. If you plan on revisiting the slice or the log files later, you should change the directory to a persistent directory of your choosing.  
 This is called initializing the slice. This process:
 * Add mfuser to all the nodes
 * Clones MeasurementFramework repository to mfuser account on the Measurement Node
