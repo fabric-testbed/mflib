@@ -25,8 +25,12 @@
 import json
 import traceback
 import os
+from typing import Optional
 
-from fabrictestbed_extensions.fablib.fablib import FablibManager
+try:
+    from fabrictestbed_extensions.fablib.fablib import FablibManager
+except ImportError:
+    FablibManager = None
 
 from cryptography.hazmat.primitives import serialization as crypto_serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -36,6 +40,7 @@ from os import chmod
 import logging
 
 from mflib.core import Core
+from mflib.node_transport import RestNodeAdapter
 
 
 class MFLib(Core):
@@ -125,6 +130,11 @@ class MFLib(Core):
             network_type (string, optional): _description_. Defaults to FABNetv4.
             site (string, optional): _description_. Defaults to NCSA.
         """
+        if FablibManager is None:
+            raise ImportError(
+                "FABlib is required for addMeasNode(). Install fabrictestbed-extensions to use slice mode."
+            )
+
         interfaces = {}
         meas_nodename = "meas-node"
         meas_node = None
@@ -207,6 +217,10 @@ class MFLib(Core):
         local_storage_directory="/tmp/mflib",
         mf_repo_branch="main",
         optimize_repos=False,
+        node=None,
+        node_api_url: Optional[str] = None,
+        node_api_token: Optional[str] = None,
+        slice_name: Optional[str] = None,
     ):
         """
         Constructor
@@ -214,6 +228,10 @@ class MFLib(Core):
             slice (fablib.slice): Slice object already set with experiment topology.
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
             mf_repo_branch (str, optional): git branch name to pull MeasurementFranework code from. Defaults to "main".
+            node: Optional node-like object exposing execute/upload/download methods.
+            node_api_url (str, optional): Base URL for the measurement node REST API.
+            node_api_token (str, optional): Optional bearer token for the measurement node REST API.
+            slice_name (str, optional): Local storage name when running without a FABlib slice.
         """
         super().__init__(
             local_storage_directory=local_storage_directory,
@@ -221,6 +239,29 @@ class MFLib(Core):
         )
         # self._FM = None
         self.mflib_log_handler = None
+
+        if slice and (node or node_api_url):
+            raise ValueError(
+                "Provide either slice or node/node_api_url when constructing MFLib, not both."
+            )
+
+        if node_api_url and node:
+            raise ValueError(
+                "Provide either node or node_api_url when constructing MFLib, not both."
+            )
+
+        if node_api_url:
+            self._meas_node = RestNodeAdapter(
+                base_url=node_api_url,
+                auth_token=node_api_token,
+            )
+            self.slice_name = slice_name or self._meas_node.get_name()
+        elif node is not None:
+            self._meas_node = node
+            resolved_slice_name = slice_name
+            if resolved_slice_name is None and hasattr(node, "get_name"):
+                resolved_slice_name = node.get_name()
+            self.slice_name = resolved_slice_name or self.measurement_node_name
 
         if slice:
             self.slice = slice

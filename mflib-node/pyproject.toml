@@ -4,17 +4,14 @@ build-backend = "flit_core.buildapi"
 
 
 [project]
-name = "fabrictestbed-mflib"
+name = "fabrictestbed-mflib-node"
 license = {file = "LICENSE"}
-authors = [ 
+authors = [
   { name="Carpenter", email="csacarp0@g.uky.edu"},
-  { name="Song"}, 
-  { name="Pinyi"}, 
-  { name="Hussam"},
 ]
 
 readme = "README.md"
-requires-python = ">=3.9"  
+requires-python = ">=3.9"
 dynamic = ["version", "description"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -22,18 +19,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-  "fabrictestbed-extensions>=1.4.0",
+  "fastapi>=0.111.0",
+  "uvicorn>=0.30.0",
 ]
 
+[project.scripts]
+mflib-node = "mflib_node.server:main"
 
 [tool.flit.module]
-name = "mflib"
+name = "mflib_node"
 
 [project.urls]
 "Homepage" = "https://github.com/fabric-testbed/mflib"
-
-[testpypi]
-repository = "https://test.pypi.org/legacy/"
-
-[pypi]
-repository = "https://upload.pypi.org/legacy/"
