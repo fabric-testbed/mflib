@@ -178,10 +178,9 @@ def main():
     sock.listen(10)
 
     print(f"[mflib-node] listening on [::]:{args.port} (IPv6 / FABNetv6 only)")
-    uvicorn.run(
-        create_app(auth_token=args.token, default_cwd=args.cwd),
-        sockets=[sock],
-    )
+    config = uvicorn.Config(create_app(auth_token=args.token, default_cwd=args.cwd))
+    server = uvicorn.Server(config)
+    server.run(sockets=[sock])
 
 
 if __name__ == "__main__":
