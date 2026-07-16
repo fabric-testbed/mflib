@@ -1,15 +1,19 @@
 import argparse
 import base64
 import getpass
+import json
 import os
 import shutil
 import socket
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
+
+_SLICE_INFO = os.environ.get("MFLIB_SLICE_INFO", "/etc/mflib/portal_registration.json")
 
 
 class ExecuteRequest(BaseModel):
@@ -46,6 +50,44 @@ def create_app(auth_token: Optional[str] = None, default_cwd: Optional[str] = No
     @app.get("/healthz")
     def healthz(_: None = Depends(_authorize)):
         return {"status": "ok"}
+
+    @app.get("/status")
+    def status(_: None = Depends(_authorize)):
+        try:
+            with open("/proc/uptime") as f:
+                up_sec = float(f.read().split()[0])
+        except Exception:
+            up_sec = None
+        return {
+            "status": "ok",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "uptime_seconds": up_sec,
+        }
+
+    @app.get("/ip")
+    def ip_info(_: None = Depends(_authorize)):
+        try:
+            r = subprocess.run(
+                ["ip", "-j", "addr", "show"],
+                capture_output=True, text=True, timeout=5,
+            )
+            ifaces = json.loads(r.stdout) if r.returncode == 0 else []
+        except Exception as e:
+            ifaces = {"error": str(e)}
+        return {"hostname": socket.gethostname(), "interfaces": ifaces}
+
+    @app.get("/slice")
+    def slice_info(_: None = Depends(_authorize)):
+        if not os.path.exists(_SLICE_INFO):
+            raise HTTPException(
+                status_code=404,
+                detail=f"{_SLICE_INFO} not found — node may not be registered yet",
+            )
+        try:
+            with open(_SLICE_INFO) as f:
+                return json.load(f)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     @app.get("/metadata")
     def metadata(_: None = Depends(_authorize)):
@@ -119,18 +161,26 @@ def create_app(auth_token: Optional[str] = None, default_cwd: Optional[str] = No
 
 def main():
     parser = argparse.ArgumentParser(description="Run the MFLib measurement node REST API")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=int, default=5000)
     parser.add_argument("--token", default=os.environ.get("MFLIB_API_TOKEN"))
     parser.add_argument("--cwd", default=None)
     args = parser.parse_args()
 
     import uvicorn
 
+    # Bind IPv6-only so the server is reachable via FABNetv6 but not IPv4.
+    # TODO: Currently binds to all IPv6 interfaces (::). Consider restricting to
+    # the FABNetv6 interface address only to avoid exposure on public IPv6 interfaces.
+    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("::", args.port, 0, 0))
+    sock.listen(10)
+
+    print(f"[mflib-node] listening on [::]:{args.port} (IPv6 / FABNetv6 only)")
     uvicorn.run(
         create_app(auth_token=args.token, default_cwd=args.cwd),
-        host=args.host,
-        port=args.port,
+        sockets=[sock],
     )
 
 
