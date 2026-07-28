@@ -443,7 +443,7 @@ class MFLib(Core):
                             f"sudo mv mfuser.pub /home/mfuser/.ssh/mfuser.pub;"
                             f"sudo cat /home/mfuser/.ssh/mfuser.pub | sudo tee -a /home/mfuser/.ssh/authorized_keys;"
                             f"sudo chmod 644 /home/mfuser/.ssh/authorized_keys;"
-                            f"sudo touch /home/mfuser/{node.get_image()};"
+                            f"sudo touch /home/mfuser/os_image_{node.get_image()};"
                             f"sudo chown -R mfuser:mfuser /home/mfuser/.ssh;"
                         )
                         threads.append(node.execute_thread(cmd))
@@ -970,8 +970,8 @@ Experiment_Nodes
                         f"sudo mkdir /home/mfuser/.ssh;"
                         f"sudo chmod 700 /home/mfuser/.ssh;"
                         f"echo 'mfuser ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee -a /etc/sudoers.d/90-cloud-init-users;"
-                        f"sudo touch /home/mfuser/{n.get_image()};"
-                        f"sudo chown mfuser:mfuser /home/mfuser/{n.get_image()};"
+                        f"sudo touch /home/mfuser/os_image_{n.get_image()};"
+                        f"sudo chown mfuser:mfuser /home/mfuser/os_image_{n.get_image()};"
                     )
                     mfuser_account_threads.append(n.execute_thread(cmd))
         except Exception as e:
