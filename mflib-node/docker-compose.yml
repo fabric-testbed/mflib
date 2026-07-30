@@ -1,0 +1,27 @@
+services:
+  mflib-node:
+    build: .
+    image: mflib-node:latest
+    # server.py binds an IPv6-only socket (FABNetv6). The default docker
+    # bridge network has no IPv6 support unless enabled here or in the
+    # Docker daemon config (/etc/docker/daemon.json -> "ipv6": true).
+    networks:
+      - fabnetv6
+    ports:
+      - "5000:5000"
+    environment:
+      MFLIB_API_TOKEN: ${MFLIB_API_TOKEN:-}
+      MFLIB_NODE_NAME: ${MFLIB_NODE_NAME:-}
+      MFLIB_NODE_USERNAME: ${MFLIB_NODE_USERNAME:-}
+      MFLIB_MANAGEMENT_IP: ${MFLIB_MANAGEMENT_IP:-}
+      MFLIB_SLICE_INFO: /etc/mflib/portal_registration.json
+    volumes:
+      - mflib-slice-info:/etc/mflib
+    command: ["--port", "5000"]
+
+networks:
+  fabnetv6:
+    enable_ipv6: true
+
+volumes:
+  mflib-slice-info:
