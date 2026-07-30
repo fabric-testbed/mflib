@@ -1269,7 +1269,8 @@ Experiment_Nodes
 
         stdout, _ = node.execute(f'ip -6 addr show {dev}')
         print(stdout)
-        
+     
+    @staticmethod   
     def portal_register_meas_node(slice_obj, portal_url="http://23.134.232.147"):
         # 
         # We need to register the meas node. It may be independent or in the same slice as the experiment
@@ -1277,7 +1278,7 @@ Experiment_Nodes
         
         # Get the needed info for registrations
 
-        MEAS_NODE_NAME = "meas_node"
+        MEAS_NODE_NAME = "meas-node"
         MEAS_NETWORK_NAME = "meas_net"
         
         
