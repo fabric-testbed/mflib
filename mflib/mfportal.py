@@ -21,11 +21,26 @@
 # SOFTWARE.
 #
 
-import base64
-import json
-import os
-from datetime import datetime, timezone
+"""
+Split out of samples/create-meas-node.ipynb. Each method below corresponds
+to one cell (or a small group of cells) from that notebook, turned into a
+reusable MFPortal staticmethod instead of notebook-global procedural code.
 
+The earlier version of this class (methods moved wholesale out of mflib.py,
+before this notebook-derived rewrite) is kept at mflib/first-draft-mfportal.py
+for reference — several of its methods (register_meas_node_to_portal in
+particular) had undefined-name bugs that this version fixes.
+"""
+
+import base64
+import io
+import json
+import re
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import paramiko
 import requests as _req
 
 from mflib.mflib import MFLib
@@ -33,619 +48,649 @@ from mflib.mflib import MFLib
 
 class MFPortal(MFLib):
     """
-    MFPortal groups the FABRIC Portal integration helpers: setting up/checking
-    mfuser accounts, locating measurement NICs/networks, and registering a
-    slice's meas node with the portal. These operate directly on a fablib
-    slice/node rather than an MFLib instance.
+    Draft MFPortal — see module docstring. Methods are grouped in the same
+    order as the notebook's cells.
     """
-
-    mfportal_class_version = "1.0.0"
-    __version__ = mfportal_class_version
-    __VERSION__ = mfportal_class_version
 
     MEAS_NODE_NAME = "meas-node"
     MEAS_NETWORK_NAME = "meas-net6"
-    MEAS_NIC_NAME = "meas-nic"
+    MEAS_NIC_NAME = "meas-nic6"
+    RT_V6 = 30
 
+    # ------------------------------------------------------------------
+    # Cell "get_unique_slice_name" helper
+    # ------------------------------------------------------------------
     @staticmethod
-    def check_mfuser_status(slice):
-        # Check if the slice nodes have been setup for the mfuser
-        # Return a list of bools that describe what parts have been setup on which nodes
-        account_status = []
-        msg = f"checkin mfuser accounts..."
-        node_checks = []
+    def get_unique_slice_name(fablib, name):
+        """
+        Returns the given slice name if it doesn't exist, otherwise increments
+        the last character to the next capital letter (A->B, B->C, ... Z->A).
 
-        cmd = (
-            f'sudo [ -d /home/mfuser/.ssh ] && echo "Directory OK" || echo "Directory FAIL";'
-            f'sudo [ -f /home/mfuser/.ssh/mfuser.pub ] && echo "Public Key OK" || echo "Public Key FAIL";'
-            f"sudo grep -q '^ssh-.* mfuser$' /home/mfuser/.ssh/authorized_keys && echo \"Auth Key OK\" || echo \"Auth Key FAIL\";"
+        :param fablib: FablibManager instance
+        :param name: desired slice name
+        :return: unique slice name
+        """
+        existing = {s.get_name() for s in fablib.get_slices()}
+
+        if name not in existing:
+            return name
+
+        base = name[:-1] if name and name[-1].isupper() else name
+        suffix_ord = ord(name[-1]) if name and name[-1].isupper() else ord('A') - 1
+
+        while True:
+            next_char = chr((suffix_ord - ord('A') + 1) % 26 + ord('A'))
+            candidate = base + next_char
+            if candidate not in existing:
+                return candidate
+            suffix_ord = ord(next_char)
+
+    # ------------------------------------------------------------------
+    # Cell 3 — Define Slice Topology
+    # ------------------------------------------------------------------
+    @staticmethod
+    def create_meas_node_slice(
+        fablib,
+        slice_name,
+        site="EDC",
+        image="docker_ubuntu_20",
+        cores=4,
+        ram_gb=16,
+        disk_gb=100,
+        meas_node_name=None,
+        meas_network_name=None,
+        meas_nic_name=None,
+    ):
+        """
+        Defines (but does not submit) a slice with a single meas node
+        connected to a FABNetv6 (IPv6) network.
+
+        Returns the unsubmitted slice_obj — call submit_slice() next.
+        """
+        slice_obj = fablib.new_slice(name=slice_name)
+
+        MFPortal.add_meas_node(
+            slice_obj,
+            site=site,
+            image=image,
+            cores=cores,
+            ram_gb=ram_gb,
+            disk_gb=disk_gb,
+            meas_node_name=meas_node_name,
+            meas_network_name=meas_network_name,
+            meas_nic_name=meas_nic_name,
         )
 
-        for node in slice.get_nodes():
-            try:
-                node_checks.append( {"node":node.get_name(), "thread":node.execute_thread(cmd)})
-
-            except Exception as e:
-                print(f"Failed to check mfuser: {e}")
-                #self.mflib_logger.exception(f"Failed to setup mfuser user.")
-                mfusers_install_success = False
-
-        status = []
-        for node_check in node_checks:
-            stdout, stderr = node_check['thread'].result()
-            if stdout:
-                #print(f"{stdout}") #self.core_logger.debug(f"STDOUT useradd mfuser: {stdout}")
-                status.append( { 'node':node_check['node'],
-                                  'home_dir':"Directory OK" in stdout,
-                                  'public_key':"Public Key OK" in stdout,
-                                  'auth_key':"Auth Key OK" in stdout
-                              } )
-
-            if stderr:
-                print(f"STDERR: {stderr}")#self.core_logger.error(f"STDERR useradd mfuser: {stderr}")
-
-
-        overview = {}
-        overview["home_dirs_complete"] = all(node['home_dir'] for node in status)
-        overview["home_dirs_partial"] = any(node['home_dir'] for node in status)
-
-        overview["public_key_complete"] = all(node['public_key'] for node in status)
-        overview["public_key_partial"] = any(node['public_key'] for node in status)
-
-        overview["auth_key_complete"] = all(node['auth_key'] for node in status)
-        overview["auth_key_partial"] = any(node['auth_key'] for node in status)
-
-        all_mfuser_accounts_setup = overview["home_dirs_complete"] and overview['public_key_complete'] and overview['auth_key_complete']
-        return {'nodes':status, 'overview':overview, 'complete':all_mfuser_accounts_setup }
+        return slice_obj
 
     @staticmethod
-    def get_mfuser_keys(slice, return_keys=False, save_public_key_filename=None, save_private_key_filename=None): #, return_strings=True,):
-        # if key filenames are given, then the keys will be saved to those directories
-        #   otherwise the downloaded files will be tmp files and be deleted once the contents have been read
-        # if return_keys is true keys will be returned as string tuple private_key, public_key
+    def add_meas_node(
+        slice_obj,
+        site="EDC",
+        image="docker_ubuntu_20",
+        cores=4,
+        ram_gb=16,
+        disk_gb=100,
+        meas_node_name=None,
+        meas_network_name=None,
+        meas_nic_name=None,
+    ):
+        """
+        Adds a meas node (with a FABNetv6 NIC/network) to an existing,
+        not-yet-submitted slice object. Unlike create_meas_node_slice(),
+        this doesn't create the slice itself — use it when the caller
+        already has a slice_obj (e.g. one with other experiment nodes on
+        it) and just wants the meas node added to it.
 
-        # Looks for the keys in the mfuser dir
-        # Copies keys to default user so they can be downloaded
-        # Downloads the keys
-        # Deletes the copies
+        Returns the newly added meas_node.
+        """
+        meas_node_name = meas_node_name or MFPortal.MEAS_NODE_NAME
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+        meas_nic_name = meas_nic_name or MFPortal.MEAS_NIC_NAME
 
-        local_private_key_filename = f'/tmp/{slice.get_name()}_mfuser_private_key'
-        local_public_key_filename = f'/tmp/{slice.get_name()}_mfuser_public_key'
+        meas_node = slice_obj.add_node(name=meas_node_name, site=site)
+        meas_node.set_capacities(cores=cores, ram=ram_gb, disk=disk_gb)
+        meas_node.set_image(image)
 
-        # The unique name for copy of the keys moved to the remotes default account
-        #   so we can use the download method. The files will then be deleted.
-        delme_private_key_filename = 'mfuser.key.mflib.framework.tmp.delme'
-        delme_public_key_filename = 'mfuser.pub.mflib.framework.tmp.delme'
+        iface = meas_node.add_component(
+            model="NIC_Basic", name=meas_nic_name
+        ).get_interfaces()[0]
+        slice_obj.add_l3network(name=meas_network_name, interfaces=[iface], type="IPv6")
 
-        if save_public_key_filename:
-            local_public_key_filename = save_public_key_filename
-        if save_private_key_filename:
-            local_private_key_filename  = save_private_key_filename
-        #keys_missing = True
-        for node in slice.get_nodes():
-            #node.show()
-            try:
-                if True: #keys_missing:
-                    # Copy
-                    copy_cmd = (
-                        f"sudo cp /home/mfuser/.ssh/mfuser.pub ~/{delme_public_key_filename};"
-                        f"sudo cp /home/mfuser/.ssh/mfuser.key ~/{delme_private_key_filename};"
-                    )
-                    stdout, stderr = node.execute(copy_cmd)
-                    if stderr:
-                        pass
-                        #print(f'On {node.get_name()} Copy keys command failed {stderr}')
+        print("Meas node added to slice:")
+        print(f"  {meas_node_name} <-- {meas_nic_name} --> {meas_network_name}  (FABNetv6)")
 
-                        # copy command failed, so files likely not there
-                    else:
-                        # Download
-                        public_result = node.download_file(f'{local_public_key_filename}', delme_public_key_filename)
-                        private_result = node.download_file(f'{local_private_key_filename}', delme_private_key_filename)
-                        #print(public_result)
-                        #print(private_result)
+        return meas_node
 
-                        # Remove Copy
-                        remove_cmd = (
-                            f"sudo rm ~/{delme_public_key_filename};"
-                            f"sudo rm ~/{delme_private_key_filename};"
-                        )
-                        stdout, stderr = node.execute(remove_cmd)
-                        # print(remove_cmd)
-                        # print(f'Remove OUT on {node.get_name()} stdout')
-                        # print(f'Remove ERR on {node.get_name()} stderr')
-                        # print('keys found')
-                        #keys_missing = False
-
-                        if return_keys:
-                            # Read the keys to return the text
-                            with open( local_public_key_filename , 'r') as f:
-                                public_key_str = f.read()
-                            with open( local_private_key_filename , 'r') as f:
-                                private_key_str = f.read()
-                        else:
-                            private_key_str = ""
-                            public_key_str = ""
-
-                        # If the caller did not specify to save the files
-                        #   we need to delete them
-                        if not save_public_key_filename:
-                            os.remove(local_public_key_filename)
-                        if not save_private_key_filename:
-                            os.remove(local_private_key_filename)
-
-                        return node.get_name(), private_key_str, public_key_str
-
-
-            except Exception as e:
-                print(f'Failed to download key file {e}')
-        #if keys_missing:
-        #print("No keys were found")
-        return "", "", ""
-
+    # ------------------------------------------------------------------
+    # Cell 4 — Submit Slice
+    # ------------------------------------------------------------------
     @staticmethod
-    def bootstrap_mfusers(slice):
+    def submit_slice(slice_obj, wait_timeout=600, wait_interval=20, progress=True):
+        print(f"Submitting '{slice_obj.get_name()}' ({wait_timeout // 60}-{wait_timeout // 60 + 5} min)...")
+        slice_obj.submit(
+            wait=True,
+            wait_timeout=wait_timeout,
+            wait_interval=wait_interval,
+            progress=progress,
+        )
+        print(f"\nSlice up — ID: {slice_obj.get_slice_id()}")
+        return slice_obj
 
-        ######################
-        # Check Status       #
-        ######################
-        status = MFPortal.portal_check_mfuser_status(slice)
-        if status['complete']:
-            # Nothing to do
-            print("MFUsers are already setup. Nothing to do")
-            return True
-
-        ######################
-        # Create MFUser keys
-        #####################
-        mfuser_private_key_filename = "mfuser_private_key"
-        mfuser_public_key_filename = "mfuser_public_key"
-        local_mfuser_private_key_filename = "mfuser_private_key"
-        local_mfuser_public_key_filename = "mfuser_public_key"
-
-        #############################
-        # Account Creation
-        ############################
-        mfuser_account_threads = []
-        try:
-            for node in status['nodes']:
-                if not node["home_dir"]:
-                    # Only create user if they don't already exist
-                    n = slice.get_node(node['node'])
-                    cmd = (
-                        f"sudo useradd -s /bin/bash -G root -m mfuser;"
-                        f"sudo mkdir /home/mfuser/.ssh;"
-                        f"sudo chmod 700 /home/mfuser/.ssh;"
-                        f"echo 'mfuser ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee -a /etc/sudoers.d/90-cloud-init-users;"
-                        f"sudo touch /home/mfuser/os_image_{n.get_image()};"
-                        f"sudo chown mfuser:mfuser /home/mfuser/os_image_{n.get_image()};"
-                    )
-                    mfuser_account_threads.append(n.execute_thread(cmd))
-        except Exception as e:
-            print(f'Failed setting up mfuser accounts: {e}')
-
-
-        for thread in mfuser_account_threads:
-            stdout, stderr = thread.result()
-            if stdout:
-                print(f"{stdout}") #self.core_logger.debug(f"STDOUT useradd mfuser: {stdout}")
-            if stderr:
-                print(f"{stderr}")#self.core_logger.error(f"STDERR useradd mfuser: {stderr}")
-        #===========================
-        # END Account Creation
-        #===========================
-
-
-        #############################
-        # Key Creation and possible key retriveal
-        ############################
-        private_key_file_to_upload = None
-        public_key_file_to_upload = None
-        # Only create keys if NO keys have been setup and placed in mfuser .ssh dir at all
-        if not status['overview']['public_key_complete'] and not status['overview']['public_key_partial']:
-            # No mfuser keys have been placed
-
-            print("Generating MFUser Keys...")
-            #self.mflib_logger.info("Generating MFUser Keys...")
-            key = rsa.generate_private_key(
-                backend=crypto_default_backend(),
-                public_exponent=65537,
-                key_size=2048,
-            )
-
-            private_key = key.private_bytes(
-                crypto_serialization.Encoding.PEM,
-                crypto_serialization.PrivateFormat.TraditionalOpenSSL,
-                crypto_serialization.NoEncryption(),
-            )
-
-            public_key = key.public_key().public_bytes(
-                crypto_serialization.Encoding.OpenSSH,
-                crypto_serialization.PublicFormat.OpenSSH,
-            )
-
-            # Decode to printable strings
-            private_key_str = private_key.decode("utf-8")
-            public_key_str = public_key.decode("utf-8")
-
-            # Save public key & change mode
-            public_key_file = open(local_mfuser_public_key_filename, "w")
-            public_key_file.write(public_key_str)
-            public_key_file.write("\n")
-            public_key_file.close()
-            chmod(local_mfuser_public_key_filename, 0o644)
-
-            public_key_file_to_upload = local_mfuser_public_key_filename
-
-            # Save private key & change mode
-            private_key_file = open(local_mfuser_private_key_filename, "w")
-            private_key_file.write(private_key_str)
-            private_key_file.close()
-            chmod(local_mfuser_private_key_filename, 0o600)
-
-            private_key_file_to_upload = local_mfuser_private_key_filename
-
-            print("MFUser key generation Done.")
-
-        elif status['overview']['public_key_partial']:
-            # Some keys got setup, but not all of them
-            # We should grab one of the existing keys to ensure they are all the same
-            print("WARNING! some keys have not been uploaded. Keys will be found and uploaded.")
-            # Could add the nodes without keys for output
-            #public_key_missing = True
-
-            keys_found, pub_key_str, priv_key_str = MFPortal.portal_get_mfuser_keys(slice, local_mfuser_public_key_filename, local_mfuser_private_key_filename)
-            if keys_found:
-                public_key_file_to_upload = local_mfuser_public_key_filename
-                private_key_file_to_upload = local_mfuser_private_key_filename
-            else:
-                print("Keys are needed but were not found on any nodes")
-
-        #===================================
-        #  END Key Creation or Retrival
-        #===================================
-
-
-        ####################################
-        # Public Key Upload
-        ###################################
-        if public_key_file_to_upload:
-            # Upload key to those who need it
-
-            public_key_uploads = []
-            for node in status['nodes']:
-                try:
-                    if not node['public_key']:
-                        n = slice.get_node(node["node"])
-                        public_key_uploads.append( {"node":n.get_name(), "thread":n.upload_file_thread(public_key_file_to_upload, "mfuser.pub") } )
-                except Exception as e:
-                    print(f"Failed to public upload key: {e}")
-
-
-            for upload in public_key_uploads:
-
-                file_attributes = upload["thread"].result()
-                #print(f'Upload to {upload["node"]} file attributes: {file_attributes}')
-                if not file_attributes:
-                    # Actually don't know what error would look like
-                    print("Failed to upload public key file")
-                else:
-                    print(file_attributes)
-
-        else:
-            # There is nothing to upload
-            pass
-
-        #======================================
-        # END Public Key Upload
-        #======================================
-
-
-        ####################################
-        # Private Key Upload
-        ###################################
-        if private_key_file_to_upload:
-            # Assume that we are uploading the private key at the same time as the public
-            #   so if public key is present, then the private key should be as well
-            #   Private key is only for keeping a copy somewhere if we need it later
-            # Upload key to those who need it
-
-            private_key_uploads = []
-            for node in status['nodes']:
-                try:
-                    if not node['public_key']:
-                        n = slice.get_node(node["node"])
-                        private_key_uploads.append( {"node":n.get_name(), "thread":n.upload_file_thread(private_key_file_to_upload, "mfuser.key") } )
-                except Exception as e:
-                    print(f"Failed to upload private keys: {e}")
-
-
-            for upload in private_key_uploads:
-
-                file_attributes = upload["thread"].result()
-               # print(f'Uploaded private key to {upload["node"]} file attributes: {file_attributes}')
-                if not file_attributes:
-                    # Actually don't know what error would look like
-                    print("Failed to upload private key file")
-                else:
-                    pass
-                    #print(file_attributes)
-
-        else:
-            # There is nothing to upload
-            pass
-
-        #======================================
-        # END Private Key Upload
-        #======================================
-
-
-
-
-        ##########################################
-        # Authorized Keys
-        #########################################
-
-        if not status['overview']['auth_key_complete']:
-            # There are keys that need to be added to authorized keys file
-            auth_key_threads = []
-            # note that private key is also being copied here as opposed to having a separate section
-            cmd = (
-                f"sudo mv mfuser.key /home/mfuser/.ssh/mfuser.key;"
-                f"sudo mv mfuser.pub /home/mfuser/.ssh/mfuser.pub;"
-                f"sudo grep -qf /home/mfuser/.ssh/mfuser.pub /home/mfuser/.ssh/authorized_keys || sudo sh -c \"sed 's/$/ mfuser/' /home/mfuser/.ssh/mfuser.pub >> /home/mfuser/.ssh/authorized_keys\";"
-                f"sudo chmod 644 /home/mfuser/.ssh/authorized_keys;"
-                f"sudo chown -R mfuser:mfuser /home/mfuser/.ssh;"
-            )
-
-
-            try:
-                for node in status['nodes']:
-                    if not node["auth_key"]:
-                        # Only move the key to auth if it is not already there
-                        n = slice.get_node(node['node'])
-                        auth_key_threads.append(n.execute_thread(cmd))
-            except Exception as e:
-                print(f'Failed moving key to authorized users: {e}')
-
-
-            for thread in auth_key_threads:
-                stdout, stderr = thread.result()
-                if stdout:
-                    print(f"auth key STDOUT {stdout}") #self.core_logger.debug(f"STDOUT useradd mfuser: {stdout}")
-                if stderr:
-                    print(f"auth key STDERR {stderr}")#self.core_logger.error(f"STDERR useradd mfuser: {stderr}")
-
-        else:
-            print("All auth keys are aleady in place")
-
-        # TODO flesh out return values
-        return True
-
-    # Checks each node in the slice to see if there is a meas nic
-    # Returns a list of nic information, meas newtwork info, if node has meas nic & a list of nodes without meas nic
+    # ------------------------------------------------------------------
+    # Cell 5 — Collect Node Info
+    # ------------------------------------------------------------------
     @staticmethod
-    def check_meas_nics(slice, filename= None):
-        slice_info = slice.toDict()
-        meas_nics = []
-        nicless_nodes = []
-        for node in slice.get_nodes():
-            meas_nic_found = False
-            node_name = node.get_name()
-            interfaces = node.get_interfaces()
-            for interface in interfaces:
-                #print(interface)
-                #print(dir(interface))
-                nic_name = interface.get_name()
-                if "mflib_meas" in nic_name:
-                    nic_address = interface.get_ip_addr()
-                    meas_nics.append( interface.toDict() ) #{'name':nic_name, 'node_name':node_name, 'ip_addr':str(nic_address)} )
-                    meas_nic_found = True
-            if not meas_nic_found:
-                nicless_nodes.append( { 'node_name':node_name } )
+    def collect_node_info(slice_obj, meas_node_name=None):
+        meas_node_name = meas_node_name or MFPortal.MEAS_NODE_NAME
+        node = slice_obj.get_node(meas_node_name)
 
-        networks = slice.get_l3networks()
-        meas_networks = []
-        for network in networks:
-            if "mflib_meas" in network.get_name():
-                #print(f'Meas network {network.get_name()}')
-                meas_networks.append(network.toDict())
-        #print(meas_networks)
+        info = {
+            "node": node,
+            "node_mgmt_ip": str(node.get_management_ip()) if node.get_management_ip() else None,
+            "node_ssh_cmd": node.get_ssh_command(),
+            "node_username": node.get_username(),
+            "slice_id": slice_obj.get_slice_id(),
+        }
 
-        #print(meas_nics)
-        file_dict = {'meas_nics':meas_nics, 'nicless_nodes':nicless_nodes, 'meas_networks': meas_networks, 'slice_info':slice_info }
+        print(f"Slice ID : {info['slice_id']}")
+        print(f"Mgmt IP  : {info['node_mgmt_ip']}")
+        print(f"SSH      : {info['node_ssh_cmd']}")
+        print(f"Username : {info['node_username']}")
 
-        if filename:
-            with open(filename, "w") as f:
-                json.dump(file_dict, f, indent=4)
+        return info
 
-        return meas_nics, nicless_nodes, meas_networks, slice_info
-
-    # This method added top level subnet and tested Jan12
-    # This method is all that is needed to add the meas network
-    # This has not been tested to see if ips are consitent after reboots
+    # ------------------------------------------------------------------
+    # Cell 6 — Assign Static FABNetv6 IP
+    #
+    # The version of this method in first-draft-mfportal.py doesn't return
+    # the values it computes, so nothing downstream (routing, registration)
+    # can use them. This version returns them instead of leaving them as
+    # notebook globals.
+    # ------------------------------------------------------------------
     @staticmethod
-    def add_fabnet_meas_network(slice):
-        #fabnet_v6_top_level_subnet = "2600:2701:5000::/40"
-        fabnet_v6_top_level_subnet = "2602:fcfb::/36"
-        for node in slice.get_nodes():
-            fabnet_name = f"mflib_meas" # method auto adds site & net type
-            node.add_fabnet(fabnet_name, net_type="IPv6", routes=[fabnet_v6_top_level_subnet])
+    def assign_static_fabnet6_ip(slice_obj, node, meas_network_name=None):
+        """
+        Assigns (or confirms) the node's static FABNetv6 address.
 
-    @staticmethod
-    def assign_static_fabnet6_ip(slice_obj, node):
-        # This is to be run on the meas-node so that it can assign the static fabnet 6 IP to the meas nic on the node.
-        # This is needed because FABRIC's ACL only allows cros-slice traffic from the registered static address not the SLAAC/EUI-64 address assigned by post_boot_config().
-        # It is assumed that the meas nic has been added to the node and slice and that the slice has been submitted.
-        # This can be called at anytime, but submit needs to be called aferwards.
-        # Normally this would be done when the meas node is added before the slice is submitted
-        net_obj   = slice_obj.get_network(MFPortal.MEAS_NETWORK_NAME)
-        iface_obj = node.get_interface(network_name=MFPortal.MEAS_NETWORK_NAME)
+        FABRIC's ACL only allows cross-slice traffic to/from the registered
+        static address, not the SLAAC/EUI-64 address assigned by
+        post_boot_config().
+
+        Returns a dict: node_ipv6, meas_net_subnet, gw_v6, dev.
+        """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+
+        net_obj = slice_obj.get_network(meas_network_name)
+        iface_obj = node.get_interface(network_name=meas_network_name)
         net_obj.config()
 
         subnet_v6 = net_obj.get_subnet()
-        gw_v6     = net_obj.get_gateway()
+        gw_v6 = net_obj.get_gateway()
         node_ipv6 = net_obj.get_available_ips(count=1)[0]
-        dev       = iface_obj.get_device_name()
+        dev = iface_obj.get_device_name()
 
-        print(f'Subnet  : {subnet_v6}')
-        print(f'Gateway : {gw_v6}')
-        print(f'IP      : {node_ipv6}')
-        print(f'Device  : {dev}')
+        print(f"Subnet  : {subnet_v6}")
+        print(f"Gateway : {gw_v6}")
+        print(f"IP      : {node_ipv6}")
+        print(f"Device  : {dev}")
 
         # Only call ip_addr_add() if the address is not already present
-        _check, _ = node.execute(f'ip -6 addr show dev {dev}')
+        _check, _ = node.execute(f"ip -6 addr show dev {dev}")
         if str(node_ipv6) not in _check:
             node.ip_addr_add(addr=node_ipv6, subnet=subnet_v6, interface=iface_obj)
-            print('Static IPv6 assigned.')
+            print("Static IPv6 assigned.")
         else:
-            print('Address already present — skipping ip_addr_add().')
+            print("Address already present — skipping ip_addr_add().")
 
-        node_ipv6       = str(node_ipv6)
-        meas_net_subnet = str(subnet_v6)
-        gw_v6_str       = str(gw_v6)
-
-        stdout, _ = node.execute(f'ip -6 addr show {dev}')
+        stdout, _ = node.execute(f"ip -6 addr show {dev}")
         print(stdout)
 
-# TODO Add Persisten fabnetv6 routing
+        return {
+            "node_ipv6": str(node_ipv6),
+            "meas_net_subnet": str(subnet_v6),
+            "gw_v6": str(gw_v6),
+            "dev": dev,
+        }
 
+    # ------------------------------------------------------------------
+    # Cell 7 — Persistent FABNetv6 Routing
+    # ------------------------------------------------------------------
     @staticmethod
-    def write_json_to_meas_node(slice_obj, data=None, remote_path="/etc/mflib/portal_registration.json"):
+    def install_persistent_fabnetv6_routing(node, node_ipv6, meas_net_subnet, gw_v6, dev, rt_v6=None):
+        """
+        Installs policy routing table `rt_v6` so replies from node_ipv6 exit
+        via the FABNetv6 gateway rather than the management default. Writes
+        a generated script + systemd one-shot unit so it survives reboots.
+        """
+        rt_v6 = rt_v6 or MFPortal.RT_V6
 
-        net_obj   = slice_obj.get_network(MFPortal.MEAS_NETWORK_NAME)
-        net_obj.config()
+        routing_script = "\n".join([
+            "#!/usr/bin/env bash",
+            "# /etc/mflib/fabnetv6_routing.sh — MFLib meas-node FABNetv6 policy routing",
+            "# Generated by MFPortal.install_persistent_fabnetv6_routing — idempotent, safe to re-run.",
+            "set -euo pipefail",
+            "",
+            f'NODE_IPV6="{node_ipv6}"',
+            f'SUBNET_V6="{meas_net_subnet}"',
+            f'GW_V6="{gw_v6}"',
+            f'DEV="{dev}"',
+            f"RT_V6={rt_v6}",
+            "",
+            "ip -6 route flush table $RT_V6 2>/dev/null || true",
+            "ip -6 route add $SUBNET_V6 dev $DEV scope link table $RT_V6",
+            "ip -6 route add default via $GW_V6 dev $DEV table $RT_V6",
+            'ip -6 rule show | grep -qF "from $NODE_IPV6 lookup $RT_V6" || \\',
+            "    ip -6 rule add from $NODE_IPV6 table $RT_V6 priority 300",
+            'echo "[mflib] FABNetv6 routing table $RT_V6 applied"',
+        ]) + "\n"
 
-        if data is None:
-            data = {
-                'written_at':       datetime.now(timezone.utc).isoformat(),
-                'slice_id':         slice_obj.get_slice_id(),
-                'slice_name':       slice_obj.get_name(),
-                'node_ipv6':        net_obj.get_available_ips(count=1)[0],
-                'meas_net_subnet':  net_obj.get_subnet(),
-                'meas_net_gateway': net_obj.get_gateway(),
-                'lease_start':      str(slice_obj.get_lease_start()),
-                'lease_end':        str(slice_obj.get_lease_end()),
-                'portal_registration': None,
-            }
+        routing_unit = "\n".join([
+            "[Unit]",
+            f"Description=MFLib meas-node FABNetv6 policy routing (table {rt_v6})",
+            "After=network-online.target",
+            "Wants=network-online.target",
+            "",
+            "[Service]",
+            "Type=oneshot",
+            "ExecStart=/etc/mflib/fabnetv6_routing.sh",
+            "RemainAfterExit=yes",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+        ]) + "\n"
 
-        print(data)
+        with open("/tmp/fabnetv6_routing.sh", "w") as f:
+            f.write(routing_script)
+        with open("/tmp/mflib-fabnetv6.service", "w") as f:
+            f.write(routing_unit)
 
+        node.upload_file("/tmp/fabnetv6_routing.sh", "/tmp/fabnetv6_routing.sh")
+        node.upload_file("/tmp/mflib-fabnetv6.service", "/tmp/mflib-fabnetv6.service")
+
+        stdout, _ = node.execute(
+            "sudo mkdir -p /etc/mflib && "
+            "sudo cp /tmp/fabnetv6_routing.sh /etc/mflib/fabnetv6_routing.sh && "
+            "sudo chmod +x /etc/mflib/fabnetv6_routing.sh && "
+            "sudo cp /tmp/mflib-fabnetv6.service /etc/systemd/system/mflib-fabnetv6.service && "
+            "sudo systemctl daemon-reload && "
+            "sudo systemctl enable mflib-fabnetv6.service && "
+            "sudo /etc/mflib/fabnetv6_routing.sh"
+        )
+        print(stdout)
+        return stdout
+
+    # ------------------------------------------------------------------
+    # Cell 8 — mfuser Account Setup (single node, paramiko key generation)
+    #
+    # Distinct from MFLib.init()'s multi-node mfuser bootstrap (which uses
+    # the `cryptography` package) and from MFPortal.bootstrap_mfusers() —
+    # this is the notebook's simpler single-node variant for a standalone
+    # meas node that isn't part of an experimenter's slice.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def setup_mfuser_account(node, slice_name, key_path=None, pub_path=None):
+        """
+        Creates (or loads) an mfuser SSH key pair and creates the mfuser
+        account on `node` with that key authorized.
+
+        Returns (mfuser_private_key, mfuser_public_key) as strings.
+        """
+        if key_path and pub_path:
+            print(f"Loading mfuser keys from {key_path}")
+            with open(key_path) as f:
+                mfuser_private_key = f.read()
+            with open(pub_path) as f:
+                mfuser_public_key = f.read().strip()
+        else:
+            save_prefix = f"{slice_name}_mfuser"
+            key = paramiko.RSAKey.generate(2048)
+            buf = io.StringIO()
+            key.write_private_key(buf)
+            mfuser_private_key = buf.getvalue()
+            mfuser_public_key = f"ssh-rsa {key.get_base64()} mfuser"
+            with open(f"{save_prefix}.key", "w") as f:
+                f.write(mfuser_private_key)
+            with open(f"{save_prefix}.pub", "w") as f:
+                f.write(mfuser_public_key + "\n")
+            print(f"Keys saved: {save_prefix}.key  /  {save_prefix}.pub")
+
+        cmd = " && ".join([
+            "sudo useradd -s /bin/bash -G root -m mfuser || true",
+            "sudo mkdir -p /home/mfuser/.ssh",
+            "sudo chmod 700 /home/mfuser/.ssh",
+            "echo 'mfuser ALL=(ALL:ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/mfuser",
+            f"echo '{mfuser_public_key}' | sudo tee /home/mfuser/.ssh/authorized_keys",
+            "sudo chmod 644 /home/mfuser/.ssh/authorized_keys",
+            "sudo chown -R mfuser:mfuser /home/mfuser/.ssh",
+        ])
+        stdout, stderr = node.execute(cmd)
+        print("mfuser account ready.")
+        if stderr:
+            print("stderr:", stderr[:200])
+
+        return mfuser_private_key, mfuser_public_key
+
+    # ------------------------------------------------------------------
+    # Cell 9 — Deploy FastAPI Info/Registration Server
+    # ------------------------------------------------------------------
+    @staticmethod
+    def deploy_info_server(node, node_ipv6, server_dir=None):
+        """
+        Uploads the FastAPI server from `server_dir` (defaults to
+        <repo_root>/meas-node-server) to /etc/mflib/server/ on the node,
+        installs pip dependencies, and starts the systemd service.
+        """
+        server_dir = Path(server_dir) if server_dir else Path("meas-node-server")
+
+        if not server_dir.exists():
+            raise FileNotFoundError(
+                f"Server source not found at {server_dir.resolve()}. "
+                "Pass server_dir explicitly."
+            )
+        print(f"Server source: {server_dir.resolve()}")
+
+        node.execute("sudo mkdir -p /etc/mflib/server/routers")
+        node.execute("sudo chown -R mfuser:mfuser /etc/mflib/server")
+
+        top_level_files = ["main.py", "schemas.py", "storage.py", "requirements.txt"]
+        for fname in top_level_files:
+            src = server_dir / fname
+            node.upload_file(str(src), f"/tmp/mfserver_{fname}")
+            node.execute(f"sudo cp /tmp/mfserver_{fname} /etc/mflib/server/{fname}")
+            print(f"  uploaded {fname}")
+
+        router_files = ["__init__.py", "info.py", "register.py", "mflib_ops.py"]
+        for fname in router_files:
+            src = server_dir / "routers" / fname
+            if not src.exists():
+                print(f"  skipping routers/{fname} (not found)")
+                continue
+            node.upload_file(str(src), f"/tmp/mfrouter_{fname}")
+            node.execute(f"sudo cp /tmp/mfrouter_{fname} /etc/mflib/server/routers/{fname}")
+            print(f"  uploaded routers/{fname}")
+
+        print("\nInstalling pip dependencies...")
+        stdout, stderr = node.execute(
+            "sudo pip3 install -q -r /etc/mflib/server/requirements.txt"
+        )
+        if stdout:
+            print(stdout)
+        if stderr and "WARNING" not in stderr:
+            print("pip stderr:", stderr[:400])
+
+        node.upload_file(
+            str(server_dir / "mflib-info-server.service"),
+            "/tmp/mflib-info-server.service",
+        )
+        stdout, _ = node.execute(
+            "sudo cp /tmp/mflib-info-server.service /etc/systemd/system/mflib-info-server.service && "
+            "sudo systemctl daemon-reload && "
+            "sudo systemctl enable mflib-info-server.service && "
+            "sudo systemctl restart mflib-info-server.service"
+        )
+        print(stdout)
+
+        time.sleep(3)
+        stdout, _ = node.execute(
+            "sudo systemctl is-active mflib-info-server.service && "
+            'curl -sf http://[::1]:5000/status || echo "WARNING: /status not yet responding"'
+        )
+        print(stdout)
+        print(f"\nFastAPI server started — http://[{node_ipv6}]:5000/status")
+        return stdout
+
+    # ------------------------------------------------------------------
+    # Cell 10 — Write Slice Info File
+    # ------------------------------------------------------------------
+    @staticmethod
+    def write_json_to_node(node, data, remote_path):
         """Write data as JSON to remote_path using a base64 pipe (avoids quoting issues)."""
         encoded = base64.b64encode(json.dumps(data, indent=2).encode()).decode()
-        stdout, stderr = slice_obj.get_node("meas-node").execute(
-            f'echo {encoded} | base64 -d | sudo tee {remote_path} > /dev/null'
+        stdout, stderr = node.execute(
+            f"echo {encoded} | base64 -d | sudo tee {remote_path} > /dev/null"
         )
-    @staticmethod
-    def check_portal_reachable(PORTAL_PUBLIC_URL):
-        if not PORTAL_PUBLIC_URL:
-            print('PORTAL_PUBLIC_URL is not set.')
-        else:
-            _portal_url   = PORTAL_PUBLIC_URL.rstrip('/')
-            _health_url   = f'{_portal_url}/api/meas-node/portal-info'
-            print(f'Checking portal at {_health_url} …')
-            try:
-                _r = _req.get(_health_url, timeout=10)
-                _r.raise_for_status()
-                _info = _r.json()
-                print('Portal reachable.')
-                print(f"  FABNetv6 IP      : {_info.get('fabnetv6_ip')}")
-                print(f"  FABNetv6 subnet  : {_info.get('fabnetv6_subnet')}")
-                print(f"  FABNetv6 gateway : {_info.get('fabnetv6_gateway')}")
-                print('\nReady to register — proceed to Cell 12.')
-            except Exception as _exc:
-                raise RuntimeError(
-                    f'Portal unreachable at {_health_url}: {_exc}\n'
-                    'Fix PORTAL_PUBLIC_URL in Cell 3, re-run Cell 3, then re-run this cell.'
-                ) from None
-
+        return stdout, stderr
 
     @staticmethod
-    def register_meas_node_to_portal(slice_obj, portal_url="http://23.134.232.147"):
-        #
-        # We need to register the meas node. It may be independent or in the same slice as the experiment
-        # In either case the meas node name should be the same so we can just use that to get the meas node info
+    def write_slice_info(
+        slice_obj,
+        node,
+        node_mgmt_ip,
+        node_ipv6,
+        meas_net_subnet,
+        gw_v6,
+        portal_registration=None,
+        remote_path="/etc/mflib/portal_registration.json",
+    ):
+        """
+        Builds the local_info dict the notebook writes unconditionally after
+        slice setup (so the info server always has something to serve, even
+        before/without portal registration) and writes it to `node`.
 
-        # Get the needed info for registrations
+        Returns the local_info dict that was written.
+        """
+        local_info = {
+            "written_at": datetime.now(timezone.utc).isoformat(),
+            "slice_id": slice_obj.get_slice_id(),
+            "slice_name": slice_obj.get_name(),
+            "node_mgmt_ip": node_mgmt_ip,
+            "node_ipv6": node_ipv6,
+            "meas_net_subnet": meas_net_subnet,
+            "meas_net_gateway": gw_v6,
+            "lease_start": str(slice_obj.get_lease_start()),
+            "lease_end": str(slice_obj.get_lease_end()),
+            "portal_registration": portal_registration,
+        }
+        print(local_info)
+        MFPortal.write_json_to_node(node, local_info, remote_path)
+        print(f"Slice info written to {remote_path}")
+        return local_info
 
-        slice_id   = slice_obj.get_slice_id()
-        slice_name = slice_obj.get_name()
-        meas_node = slice_obj.get_node(MFPortal.MEAS_NODE_NAME)
+    # ------------------------------------------------------------------
+    # Cell 11 — Test Portal Connectivity
+    #
+    # Identical to first-draft-mfportal.py's check_portal_reachable — no
+    # behavior change, just carried over so this file stands alone.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def check_portal_reachable(portal_public_url):
+        if not portal_public_url:
+            print("PORTAL_PUBLIC_URL is not set.")
+            return None
 
+        portal_url = portal_public_url.rstrip("/")
+        health_url = f"{portal_url}/api/meas-node/portal-info"
+        print(f"Checking portal at {health_url} ...")
+        try:
+            r = _req.get(health_url, timeout=10)
+            r.raise_for_status()
+            info = r.json()
+            print("Portal reachable.")
+            print(f"  FABNetv6 IP      : {info.get('fabnetv6_ip')}")
+            print(f"  FABNetv6 subnet  : {info.get('fabnetv6_subnet')}")
+            print(f"  FABNetv6 gateway : {info.get('fabnetv6_gateway')}")
+            return info
+        except Exception as exc:
+            raise RuntimeError(f"Portal unreachable at {health_url}: {exc}") from None
 
-        net_obj   = slice_obj.get_network(MFPortal.MEAS_NETWORK_NAME)
-        iface_obj = meas_node.get_interface(network_name=MFPortal.MEAS_NETWORK_NAME)
-        net_obj.config()
-
-        fabnetv6_subnet_str     = str(net_obj.get_subnet())
-        fabnetv6_gateway_str    = str(net_obj.get_gateway())
-        dev                     = str(iface_obj.get_device_name())
-
-        node_ipv6               = str(iface_obj.get_ip_addr())
-
-        print(f'Subnet  : {subnet_v6}')
-        print(f'Gateway : {gw_v6}')
-        print(f'IP      : {node_ipv6}')
-        print(f'Device  : {dev}')
-
-        import requests as _req
-
-        portal_registration = None
-
+    # ------------------------------------------------------------------
+    # Cell 12 — Register with Portal
+    #
+    # This is a working replacement for first-draft-mfportal.py's
+    # register_meas_node_to_portal(), which references undefined names
+    # (subnet_v6, gw_v6, fabetv6_gateway_str, mfuser_public_key, local_info,
+    # _write_json_to_node) and would raise NameError if called. This version
+    # takes everything it needs as explicit arguments instead of relying on
+    # notebook-global state.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def register_meas_node(
+        slice_id,
+        slice_name,
+        node_ipv6,
+        meas_net_subnet,
+        gw_v6,
+        mfuser_public_key,
+        node_mgmt_ip,
+        lease_start,
+        lease_end,
+        portal_url,
+    ):
+        """
+        Calls POST /api/meas-node/register on the portal. Returns a
+        portal_registration dict (with 'response' holding either the
+        portal's JSON reply or an {'error': ...} on failure), or None if
+        portal_url is falsy.
+        """
         if not portal_url:
-            print('PORTAL_PUBLIC_URL is not set — skipping registration.')
-        else:
-            portal_url = portal_url.rstrip('/')
-            reg_url    = f'{portal_url}/api/meas-node/register'
+            print("PORTAL_PUBLIC_URL is not set — skipping registration.")
+            return None
 
-            reg_payload = {
-                'slice_uuid':        slice_id,
-                'slice_name':        slice_name,
-                'fabnetv6_ip':       node_ipv6,
-                'fabnetv6_subnet':   fabnetv6_subnet_str,
-                'fabnetv6_gateway':  fabetv6_gateway_str,
-                'mfuser_public_key': mfuser_public_key,
-                'node_mgmt_ip':      "",
-                'slice_created_at':  str(slice_obj.get_lease_start()),
-                'slice_expires_at':  str(slice_obj.get_lease_end()),
-            }
+        portal_url = portal_url.rstrip("/")
+        reg_url = f"{portal_url}/api/meas-node/register"
 
-            print(f'Registering with portal at {reg_url} …')
-            try:
-                resp = _req.post(reg_url, json=reg_payload, timeout=30)
-                resp.raise_for_status()
-                reg_response = resp.json()
-                print(f"Status   : {reg_response.get('status')}")
-                print(json.dumps(reg_response, indent=2))
-            except Exception as exc:
-                print(f'Registration failed: {exc}')
-                reg_response = {'error': str(exc)}
+        reg_payload = {
+            "slice_uuid": slice_id,
+            "slice_name": slice_name,
+            "fabnetv6_ip": node_ipv6,
+            "fabnetv6_subnet": meas_net_subnet,
+            "fabnetv6_gateway": gw_v6,
+            "mfuser_public_key": mfuser_public_key,
+            "node_mgmt_ip": node_mgmt_ip,
+            "slice_created_at": str(lease_start),
+            "slice_expires_at": str(lease_end),
+        }
 
-            portal_registration = {
-                'registered_at': datetime.now(timezone.utc).isoformat(),
-                'portal_url':    portal_url,
-                'request':       reg_payload,
-                'response':      reg_response,
-            }
+        print(f"Registering with portal at {reg_url} ...")
+        try:
+            resp = _req.post(reg_url, json=reg_payload, timeout=30)
+            resp.raise_for_status()
+            reg_response = resp.json()
+            print(f"Status   : {reg_response.get('status')}")
+            print(json.dumps(reg_response, indent=2))
+        except Exception as exc:
+            print(f"Registration failed: {exc}")
+            reg_response = {"error": str(exc)}
 
-            # Overwrite the slice info file with full registration data
-            local_info['portal_registration'] = portal_registration
-            local_info['written_at'] = datetime.now(timezone.utc).isoformat()
-            _write_json_to_node(meas_node, local_info, '/etc/mflib/portal_registration.json')
-            print('\nRegistration record saved to /etc/mflib/portal_registration.json')
+        return {
+            "registered_at": datetime.now(timezone.utc).isoformat(),
+            "portal_url": portal_url,
+            "request": reg_payload,
+            "response": reg_response,
+        }
 
+    # ------------------------------------------------------------------
+    # Cell 13 — Install MeasurementFramework
+    # ------------------------------------------------------------------
+    @staticmethod
+    def clone_measurement_framework_repo(node, mf_repo_branch="main"):
+        # TODO change to downloading a release tarball instead of cloning the repo
+        cmd = (
+            f"sudo -u mfuser git clone -q -b {mf_repo_branch} "
+            f"https://github.com/fabric-testbed/MeasurementFramework.git /home/mfuser/mf_git"
+        )
+        stdout, stderr = node.execute(cmd, quiet=True)
 
+        if stdout:
+            print(f"STDOUT: {stdout}")
+        if stderr:
+            if "already exists and is not an empty directory" not in stderr:
+                print("Clone Directory already exist. Cloning Measurement Framework Repository from github.com Failed.")
+            else:
+                print(f"STDERR: {stderr}")
+        return stdout, stderr
 
     @staticmethod
-    def portal_add_meas_node_to_slice(slice_obj, meas_node_name=None, meas_network_name=None):
-        # Need to add the meas node for a portal accesible slice
-        # Add the meas node
+    def run_bootstrap_script(node):
+        print("Starting Bootstrap Process on Measure Node (bash script)...")
+        cmd = "sudo -u mfuser /home/mfuser/mf_git/instrumentize/experiment_bootstrap/bootstrap.sh"
+        stdout, stderr = node.execute(cmd, quiet=True)
+        print("Bootstrap Process on Measure Node (bash script) done.")
 
-        SITE              = "EDC"    # Place all meas nodes on EDC
-        IMAGE             = "docker_ubuntu_24"
-        CORES             = 4
-        RAM_GB            = 16
-        DISK_GB           = 100
+        if stdout:
+            print(f"STDOUT: {stdout}")
+        if stderr:
+            print(f"STDERR: {stderr}")
+        return stdout, stderr
 
-        MEAS_NODE_NAME    = meas_node_name or MFPortal.MEAS_NODE_NAME
-        MEAS_NETWORK_NAME = meas_network_name or MFPortal.MEAS_NETWORK_NAME
-        MEAS_NIC_NAME     = MFPortal.MEAS_NIC_NAME
+    @staticmethod
+    def run_bootstrap_ansible(node):
+        print("Starting Bootstrap Process on Measure Node (Ansible Playbook)...")
+        cmd = (
+            "sudo cp /home/mfuser/mf_git/instrumentize/experiment_bootstrap/ansible.cfg /home/mfuser/services/common/ansible.cfg;"
+            "sudo chown mfuser:mfuser /home/mfuser/services/common/ansible.cfg;"
+            "sudo -u mfuser python3 /home/mfuser/mf_git/instrumentize/experiment_bootstrap/bootstrap_playbooks.py;"
+        )
+        stdout, stderr = node.execute(cmd, quiet=True)
+        print("Bootstrap Process on Measure Node (Ansible Playbook) done.")
+
+        if stdout:
+            try:
+                print(f"STDOUT: {json.dumps(stdout, indent=2)}")
+            except ValueError:
+                print(f"STDOUT: {stdout}")
+            if "Bootstrap playbook install failed" in stdout:
+                print("Bootstrap ansible scripts Failed. See logs for details")
+        if stderr:
+            print(f"STDERR: {stderr}")
+
+        print("Bootstrap ansible scripts done")
+        return stdout, stderr
+
+    @staticmethod
+    def clone_mflib_and_install_node_server(node, mflib_repo_branch="node"):
+        cmd = (
+            f"sudo -u mfuser git clone -q -b {mflib_repo_branch} "
+            f"https://github.com/fabric-testbed/mflib.git /home/mfuser/mflib;"
+            f"cd /home/mfuser/mflib;"
+            f"sudo -u mfuser pip install -e mflib-node;"
+        )
+        stdout, stderr = node.execute(cmd, quiet=True)
+
+        if stdout:
+            print(f"STDOUT: {stdout}")
+        if stderr:
+            if "already exists and is not an empty directory" not in stderr:
+                print("Clone Directory already exist. Cloning MFLIB Repository from github.com Failed.")
+            else:
+                print(f"STDERR: {stderr}")
+        return stdout, stderr
+
+    # ------------------------------------------------------------------
+    # Cell 14 — Summary
+    # ------------------------------------------------------------------
+    @staticmethod
+    def print_summary(
+        slice_name,
+        slice_id,
+        node_ipv6,
+        meas_net_subnet,
+        gw_v6,
+        node_mgmt_ip,
+        node_ssh_cmd,
+        mfuser_key_filename,
+        portal_registration=None,
+        portal_public_url=None,
+    ):
+        sep = "=" * 62
+        print(sep)
+        print(f"  Meas Node Ready — {slice_name}")
+        print(sep)
+        print(f"  Slice ID      : {slice_id}")
+        print(f"  FABNetv6 IP   : {node_ipv6}")
+        print(f"  Subnet        : {meas_net_subnet}")
+        print(f"  Gateway       : {gw_v6}")
+        print(f"  Mgmt IP       : {node_mgmt_ip}")
+        print(f"  SSH           : {node_ssh_cmd}")
+        print(f"  mfuser key    : {mfuser_key_filename}")
+        print("-" * 62)
+        print(f"  Info server   : http://[{node_ipv6}]:5000/status")
+        if portal_registration:
+            print("  Portal        : registered")
+            print(f"  Portal info   : {portal_public_url}/api/meas-node/{slice_id}/info")
+            slug = re.sub(r"[^a-z0-9]+", "-", slice_name.lower()).strip("-") + "-" + slice_id[:5]
+            print(f"  Proxy URL     : http://{slug}.<PORTAL_DOMAIN>/status  (set PORTAL_DOMAIN in docker-compose)")
+        else:
+            print("  Portal        : not registered")
+        print(sep)
