@@ -660,24 +660,29 @@ class MFPortal(MFLib):
     # ------------------------------------------------------------------
     # Meas node self-start
     #
-    # The methods above (clone_measurement_framework_repo, etc.) run their
-    # setup commands over SSH from the client, once, when the client calls
-    # them. This installs the equivalent clone + services-dir setup as a
-    # systemd oneshot service that runs locally on the node itself — so the
-    # node can self-start its own setup, e.g. on first boot, without a
-    # client driving it interactively.
+    # The methods above (clone_measurement_framework_repo,
+    # run_bootstrap_script, run_bootstrap_ansible, etc.) run their setup
+    # commands over SSH from the client, once, when the client calls them.
+    # This installs the equivalent clone + bootstrap.sh + ansible
+    # bootstrap.yml sequence as a systemd oneshot service that runs locally
+    # on the node itself — so the node can self-start its own setup, e.g.
+    # on first boot, without a client driving it interactively.
     # ------------------------------------------------------------------
     @staticmethod
     def meas_node_self_start(node, mf_repo_branch="main"):
         """
         Installs a systemd oneshot service on `node` that runs a small
-        Python script to clone the MeasurementFramework repo and create the
-        mfuser services directory — the local-node equivalent of calling
-        clone_measurement_framework_repo() plus the services-dir setup
-        _make_hosts_ini_file() does on the mflib client side.
+        Python script to clone the MeasurementFramework repo, create the
+        mfuser services directory, then run bootstrap.sh (installs ansible
+        and stages all user_services) and the ansible bootstrap.yml
+        playbook (docker/PTP/node-exporter etc.) — the local-node
+        equivalent of calling clone_measurement_framework_repo(),
+        run_bootstrap_script(), and run_bootstrap_ansible() from the mflib
+        client side.
 
         The service starts immediately and also runs on every future boot
-        (safe to re-run: git clone / mkdir are both idempotent here).
+        (safe to re-run: git clone / mkdir / bootstrap.sh / the ansible
+        playbook are all idempotent here).
         """
         self_start_script = "\n".join([
             "#!/usr/bin/env python3",
@@ -699,6 +704,12 @@ class MFPortal(MFLib):
             '    run(f"sudo -u mfuser git clone -q -b {MF_REPO_BRANCH} {MF_REPO_URL} {MF_REPO_DIR}")',
             '    run(f"sudo mkdir -p {SERVICES_DIR}")',
             '    run(f"sudo chown -R mfuser:mfuser /home/mfuser/services {MF_REPO_DIR}")',
+            '    run(f"sudo -u mfuser {MF_REPO_DIR}/instrumentize/experiment_bootstrap/bootstrap.sh")',
+            '    run(',
+            '        f"sudo cp {MF_REPO_DIR}/instrumentize/experiment_bootstrap/ansible.cfg {SERVICES_DIR}/ansible.cfg && "',
+            '        f"sudo chown mfuser:mfuser {SERVICES_DIR}/ansible.cfg && "',
+            '        f"sudo -u mfuser python3 {MF_REPO_DIR}/instrumentize/experiment_bootstrap/bootstrap_playbooks.py"',
+            "    )",
             '    print("[mflib] self-start complete")',
             "",
             "",
@@ -708,7 +719,7 @@ class MFPortal(MFLib):
 
         self_start_unit = "\n".join([
             "[Unit]",
-            "Description=MFLib meas-node self-start (clone MeasurementFramework repo, set up services dirs)",
+            "Description=MFLib meas-node self-start (clone MeasurementFramework repo, run bootstrap.sh and ansible bootstrap.yml)",
             "After=network-online.target",
             "Wants=network-online.target",
             "",
