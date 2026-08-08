@@ -371,6 +371,42 @@ class MFPortal(MFLib):
 
         return mfuser_private_key, mfuser_public_key
 
+    @staticmethod
+    def setup_mfuser_accounts(slice_obj, slice_name=None):
+        """
+        Calls setup_mfuser_account() for every node in the slice. The key
+        pair is generated once, on the first node; every other node reuses
+        that same key pair (via the key files setup_mfuser_account() saves
+        for the first node) instead of generating its own, so all nodes end
+        up trusting the same mfuser key.
+
+        Returns (mfuser_private_key, mfuser_public_key) as strings — the
+        keys returned by the first call, shared by every node.
+        """
+        slice_name = slice_name or slice_obj.get_name()
+        nodes = slice_obj.get_nodes()
+        if not nodes:
+            print("No nodes found in slice.")
+            return None, None
+
+        first_node, *remaining_nodes = nodes
+
+        print(f"Setting up mfuser account on {first_node.get_name()} (generating key pair)...")
+        mfuser_private_key, mfuser_public_key = MFPortal.setup_mfuser_account(
+            first_node, slice_name
+        )
+
+        key_path = f"{slice_name}_mfuser.key"
+        pub_path = f"{slice_name}_mfuser.pub"
+
+        for node in remaining_nodes:
+            print(f"Setting up mfuser account on {node.get_name()} (reusing key pair)...")
+            MFPortal.setup_mfuser_account(
+                node, slice_name, key_path=key_path, pub_path=pub_path
+            )
+
+        return mfuser_private_key, mfuser_public_key
+
     # ------------------------------------------------------------------
     # Cell 9 — Deploy FastAPI Info/Registration Server
     # ------------------------------------------------------------------
