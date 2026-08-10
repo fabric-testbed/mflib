@@ -253,6 +253,54 @@ class MFPortal(MFLib):
             "dev": dev,
         }
 
+    @staticmethod
+    def add_meas_network(slice_obj, meas_network_name=None, meas_nic_name=None):
+        """
+        Ensures every node in the slice is wired onto the FABNetv6 meas
+        network with a static IP assigned.
+
+        For each node: if it already has an interface on meas_network_name,
+        it's left alone — a note is printed and the node is skipped.
+        Otherwise a NIC_Basic component is added, attached to the network,
+        and assign_static_fabnet6_ip() is called to give it a static
+        address. Creates meas_network_name itself first if it doesn't
+        already exist.
+
+        Note: adding a component to a node implies the slice supports
+        adding hardware after submission (fablib's modify/resubmit flow) —
+        this is only expected to work on nodes that haven't been submitted
+        yet, or on fablib versions where slice modification is supported.
+
+        Returns {node_name: assign_static_fabnet6_ip() result} for every
+        node that was newly wired up. Nodes that already had a FABNetv6 NIC
+        are not included.
+        """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+        meas_nic_name = meas_nic_name or MFPortal.MEAS_NIC_NAME
+
+        net_obj = slice_obj.get_network(meas_network_name)
+        if net_obj is None:
+            print(f"Creating FABNetv6 network {meas_network_name}.")
+            net_obj = slice_obj.add_l3network(name=meas_network_name, type="IPv6")
+
+        results = {}
+        for node in slice_obj.get_nodes():
+            if node.get_interface(network_name=meas_network_name) is not None:
+                print(f"{node.get_name()}: FABNetv6 NIC on {meas_network_name} already exists — skipping.")
+                continue
+
+            print(f"{node.get_name()}: adding FABNetv6 NIC on {meas_network_name}.")
+            iface = node.add_component(
+                model="NIC_Basic", name=meas_nic_name
+            ).get_interfaces()[0]
+            net_obj.add_interface(iface)
+
+            results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
+                slice_obj, node, meas_network_name=meas_network_name
+            )
+
+        return results
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
