@@ -1007,9 +1007,14 @@ class MFPortal(MFLib):
             "sudo cp /tmp/mflib-meas-node-self-start.service /etc/systemd/system/mflib-meas-node-self-start.service && "
             "sudo systemctl daemon-reload && "
             "sudo systemctl enable mflib-meas-node-self-start.service && "
-            "sudo systemctl start mflib-meas-node-self-start.service"
+            "sudo systemctl start --no-block mflib-meas-node-self-start.service"
         )
         print(stdout)
+        print(
+            "Self-start triggered — it runs in the background on the node. "
+            "Poll /home/mfuser/mflib_self_start_actions.json (or "
+            "`systemctl status mflib-meas-node-self-start.service`) for progress."
+        )
         return stdout
 
     # ------------------------------------------------------------------
