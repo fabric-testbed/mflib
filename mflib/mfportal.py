@@ -267,9 +267,17 @@ class MFPortal(MFLib):
         already exist.
 
         Note: adding a component to a node implies the slice supports
-        adding hardware after submission (fablib's modify/resubmit flow) —
-        this is only expected to work on nodes that haven't been submitted
-        yet, or on fablib versions where slice modification is supported.
+        adding hardware after submission (fablib's modify/resubmit flow).
+        A newly added NIC/network only exists in fablib's local model until
+        the slice is (re)submitted — before that, the network has no real
+        subnet/gateway from FABRIC yet, so assign_static_fabnet6_ip() would
+        fail with net_obj.get_available_ips() returning None. This method
+        calls slice_obj.submit() after wiring up any new NICs, before
+        assigning IPs, to cover both the pre-submit case (initial slice
+        build) and the already-submitted case (retrofitting an existing
+        slice) — assuming your fablib version supports resubmitting an
+        already-submitted slice to add hardware; older versions may need
+        slice_obj.modify()/modify_accept() instead.
 
         Returns {node_name: assign_static_fabnet6_ip() result} for every
         node that was newly wired up. Nodes that already had a FABNetv6 NIC
@@ -283,7 +291,7 @@ class MFPortal(MFLib):
             print(f"Creating FABNetv6 network {meas_network_name}.")
             net_obj = slice_obj.add_l3network(name=meas_network_name, type="IPv6")
 
-        results = {}
+        newly_wired = []
         for node in slice_obj.get_nodes():
             if node.get_interface(network_name=meas_network_name) is not None:
                 print(f"{node.get_name()}: FABNetv6 NIC on {meas_network_name} already exists — skipping.")
@@ -294,7 +302,14 @@ class MFPortal(MFLib):
                 model="NIC_Basic", name=meas_nic_name
             ).get_interfaces()[0]
             net_obj.add_interface(iface)
+            newly_wired.append(node)
 
+        if newly_wired:
+            print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
+            slice_obj.submit()
+
+        results = {}
+        for node in newly_wired:
             results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
                 slice_obj, node, meas_network_name=meas_network_name
             )
