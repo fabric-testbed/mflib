@@ -537,6 +537,34 @@ class MFPortal(MFLib):
         return stdout, stderr
 
     @staticmethod
+    def collect_write_slice_info_args(slice_obj, meas_node_name=None, meas_network_name=None):
+        """
+        Gathers the node/node_mgmt_ip/node_ipv6/meas_net_subnet/gw_v6
+        arguments write_slice_info() needs, via collect_node_info() and
+        assign_static_fabnet6_ip(), so callers don't have to wire those two
+        cells together by hand.
+
+        Returns a dict with keys node, node_mgmt_ip, node_ipv6,
+        meas_net_subnet, gw_v6 -- pass it straight through:
+            args = MFPortal.collect_write_slice_info_args(slice_obj)
+            MFPortal.write_slice_info(slice_obj, **args)
+        """
+        node_info = MFPortal.collect_node_info(slice_obj, meas_node_name=meas_node_name)
+        node = node_info["node"]
+
+        ip_info = MFPortal.assign_static_fabnet6_ip(
+            slice_obj, node, meas_network_name=meas_network_name
+        )
+
+        return {
+            "node": node,
+            "node_mgmt_ip": node_info["node_mgmt_ip"],
+            "node_ipv6": ip_info["node_ipv6"],
+            "meas_net_subnet": ip_info["meas_net_subnet"],
+            "gw_v6": ip_info["gw_v6"],
+        }
+
+    @staticmethod
     def write_slice_info(
         slice_obj,
         node,
@@ -570,6 +598,25 @@ class MFPortal(MFLib):
         MFPortal.write_json_to_node(node, local_info, remote_path)
         print(f"Slice info written to {remote_path}")
         return local_info
+
+
+    @staticmethod
+    def setup_initial_slice_json(slice_obj, meas_node_name=MEAS_NODE_NAME, meas_network_name=MEAS_NETWORK_NAME):
+        """
+        One-call convenience wrapper for writing the initial
+        /etc/mflib/portal_registration.json right after slice setup, before
+        portal registration has happened (portal_registration is left None
+        -- register_meas_node() plus a second write_slice_info() call fill
+        that in later).
+
+        Gathers write_slice_info()'s arguments via
+        collect_write_slice_info_args() so the only required argument here
+        is slice_obj. Returns the local_info dict that was written.
+        """
+        args = MFPortal.collect_write_slice_info_args(
+            slice_obj, meas_node_name=meas_node_name, meas_network_name=meas_network_name
+        )
+        return MFPortal.write_slice_info(slice_obj, **args)
 
     # ------------------------------------------------------------------
     # Cell 11 — Test Portal Connectivity
