@@ -782,27 +782,43 @@ class MFPortal(MFLib):
         the slice itself, so the caller still has to supply those (the key
         comes from setup_mfuser_account()/setup_mfuser_accounts()).
 
+        Works even if there's no meas node in this slice (or it hasn't been
+        wired onto the FABNetv6 network yet) -- slice_id/slice_name/
+        lease_start/lease_end are always populated; node_ipv6/
+        meas_net_subnet/gw_v6/node_mgmt_ip are left None instead of raising
+        if the meas node can't be found or has no FABNetv6 NIC, so callers
+        can still get a (partial) dict back rather than an exception.
+
         Returns a dict ready to pass straight through:
             args = MFPortal.collect_register_meas_node_args(
                 slice_obj, mfuser_public_key, portal_url=portal_url
             )
             MFPortal.register_meas_node(**args)
         """
-        node_info = MFPortal.collect_node_info(slice_obj, meas_node_name=meas_node_name)
-        node = node_info["node"]
+        node_ipv6 = meas_net_subnet = gw_v6 = node_mgmt_ip = None
 
-        ip_info = MFPortal.assign_static_fabnet6_ip(
-            slice_obj, node, meas_network_name=meas_network_name
-        )
+        try:
+            node_info = MFPortal.collect_node_info(slice_obj, meas_node_name=meas_node_name)
+            node = node_info["node"]
+            node_mgmt_ip = node_info["node_mgmt_ip"]
+
+            ip_info = MFPortal.assign_static_fabnet6_ip(
+                slice_obj, node, meas_network_name=meas_network_name
+            )
+            node_ipv6 = ip_info["node_ipv6"]
+            meas_net_subnet = ip_info["meas_net_subnet"]
+            gw_v6 = ip_info["gw_v6"]
+        except Exception as e:
+            print(f"No meas node FABNetv6 info available ({e}); registering without it.")
 
         return {
             "slice_id": slice_obj.get_slice_id(),
             "slice_name": slice_obj.get_name(),
-            "node_ipv6": ip_info["node_ipv6"],
-            "meas_net_subnet": ip_info["meas_net_subnet"],
-            "gw_v6": ip_info["gw_v6"],
+            "node_ipv6": node_ipv6,
+            "meas_net_subnet": meas_net_subnet,
+            "gw_v6": gw_v6,
             "mfuser_public_key": mfuser_public_key,
-            "node_mgmt_ip": node_info["node_mgmt_ip"],
+            "node_mgmt_ip": node_mgmt_ip,
             "lease_start": slice_obj.get_lease_start(),
             "lease_end": slice_obj.get_lease_end(),
             "portal_url": portal_url,
