@@ -359,6 +359,32 @@ class MFPortal(MFLib):
 
         return results
 
+    @staticmethod
+    def get_meas_net(slice_obj, meas_network_name=None):
+        """
+        Returns {node_name: assign_static_fabnet6_ip() result} for every
+        node in the slice that already has a FABNetv6 meas NIC wired up
+        (via add_meas_node()/add_meas_network()) -- a read-only query,
+        unlike add_meas_network() which only reports on nodes it just
+        wired up. Nodes without one (e.g. the meas node doesn't exist in
+        this slice, or a node just hasn't been wired yet) are silently
+        skipped rather than raising.
+        """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+
+        results = {}
+        for node in slice_obj.get_nodes():
+            site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
+            if node.get_interface(network_name=site_network_name) is None:
+                print(f"{node.get_name()}: no FABNetv6 NIC on {site_network_name} — skipping.")
+                continue
+
+            results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
+                slice_obj, node, meas_network_name=meas_network_name
+            )
+
+        return results
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
@@ -739,6 +765,49 @@ class MFPortal(MFLib):
     # takes everything it needs as explicit arguments instead of relying on
     # notebook-global state.
     # ------------------------------------------------------------------
+    @staticmethod
+    def collect_register_meas_node_args(
+        slice_obj,
+        mfuser_public_key,
+        meas_node_name=None,
+        meas_network_name=None,
+        portal_url=None,
+    ):
+        """
+        Gathers the slice_id/slice_name/node_ipv6/meas_net_subnet/gw_v6/
+        node_mgmt_ip/lease_start/lease_end arguments register_meas_node()
+        needs, via collect_node_info() and assign_static_fabnet6_ip() --
+        the same pattern collect_write_slice_info_args() uses for
+        write_slice_info(). mfuser_public_key and portal_url aren't part of
+        the slice itself, so the caller still has to supply those (the key
+        comes from setup_mfuser_account()/setup_mfuser_accounts()).
+
+        Returns a dict ready to pass straight through:
+            args = MFPortal.collect_register_meas_node_args(
+                slice_obj, mfuser_public_key, portal_url=portal_url
+            )
+            MFPortal.register_meas_node(**args)
+        """
+        node_info = MFPortal.collect_node_info(slice_obj, meas_node_name=meas_node_name)
+        node = node_info["node"]
+
+        ip_info = MFPortal.assign_static_fabnet6_ip(
+            slice_obj, node, meas_network_name=meas_network_name
+        )
+
+        return {
+            "slice_id": slice_obj.get_slice_id(),
+            "slice_name": slice_obj.get_name(),
+            "node_ipv6": ip_info["node_ipv6"],
+            "meas_net_subnet": ip_info["meas_net_subnet"],
+            "gw_v6": ip_info["gw_v6"],
+            "mfuser_public_key": mfuser_public_key,
+            "node_mgmt_ip": node_info["node_mgmt_ip"],
+            "lease_start": slice_obj.get_lease_start(),
+            "lease_end": slice_obj.get_lease_end(),
+            "portal_url": portal_url,
+        }
+
     @staticmethod
     def register_meas_node(
         slice_id,
