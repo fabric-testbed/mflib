@@ -385,6 +385,30 @@ class MFPortal(MFLib):
 
         return results
 
+    @staticmethod
+    def collect_slice_register_info(slice_obj, meas_network_name=None):
+        """
+        Gathers slice-level registration info without assuming a dedicated
+        meas node exists -- unlike collect_register_meas_node_args(), this
+        never looks up any specific node by name, so there's no meas-node
+        lookup to fail. Per-node FABNetv6 info comes from get_meas_net(),
+        which already skips any node without a wired-up NIC instead of
+        raising.
+
+        Returns a dict: slice_name, slice_id, lease_start, lease_end,
+        meas_net (get_meas_net()'s {node_name: assign_static_fabnet6_ip()
+        result} dict).
+        """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+
+        return {
+            "slice_name": slice_obj.get_name(),
+            "slice_id": slice_obj.get_slice_id(),
+            "lease_start": slice_obj.get_lease_start(),
+            "lease_end": slice_obj.get_lease_end(),
+            "meas_net": MFPortal.get_meas_net(slice_obj, meas_network_name=meas_network_name),
+        }
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
