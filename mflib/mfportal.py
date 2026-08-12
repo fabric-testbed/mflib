@@ -54,7 +54,6 @@ class MFPortal(MFLib):
 
     MEAS_NODE_NAME = "meas-node"
     MEAS_NETWORK_NAME = "meas-net6"
-    MEAS_NIC_NAME = "meas-nic6"
     RT_V6 = 30
 
     # ------------------------------------------------------------------
@@ -89,6 +88,19 @@ class MFPortal(MFLib):
     # Cell 3 — Define Slice Topology
     # ------------------------------------------------------------------
     @staticmethod
+    def meas_fabnet_name(meas_network_name, site):
+        """
+        The exact per-site network name node.add_fabnet(name=meas_network_name,
+        net_type="IPv6") creates/reuses for a node at `site` — fablib names
+        it "<name>_<net_type>_<site>" internally. Reconstructing it here
+        (rather than guessing/substring-matching) is what lets
+        add_meas_network() and assign_static_fabnet6_ip() look up the same
+        network deterministically, without needing add_fabnet() to return
+        it directly.
+        """
+        return f"{meas_network_name}_IPv6_{site}"
+
+    @staticmethod
     def create_meas_node_slice(
         fablib,
         slice_name,
@@ -99,7 +111,6 @@ class MFPortal(MFLib):
         disk_gb=100,
         meas_node_name=None,
         meas_network_name=None,
-        meas_nic_name=None,
     ):
         """
         Defines (but does not submit) a slice with a single meas node
@@ -118,7 +129,6 @@ class MFPortal(MFLib):
             disk_gb=disk_gb,
             meas_node_name=meas_node_name,
             meas_network_name=meas_network_name,
-            meas_nic_name=meas_nic_name,
         )
 
         return slice_obj
@@ -133,7 +143,6 @@ class MFPortal(MFLib):
         disk_gb=100,
         meas_node_name=None,
         meas_network_name=None,
-        meas_nic_name=None,
     ):
         """
         Adds a meas node (with a FABNetv6 NIC/network) to an existing,
@@ -142,23 +151,29 @@ class MFPortal(MFLib):
         already has a slice_obj (e.g. one with other experiment nodes on
         it) and just wants the meas node added to it.
 
+        Uses node.add_fabnet() rather than manually creating an
+        add_l3network()/add_component() — this is the same mechanism
+        add_meas_network() uses for the slice's other nodes, so the meas
+        node ends up on a "<meas_network_name>_IPv6_<site>" network
+        (see meas_fabnet_name()) just like everyone else, and
+        assign_static_fabnet6_ip() works identically for either. Also
+        means a single FABNetv6 network is never asked to span more than
+        one site — FABRIC's orchestrator rejects that with "cannot span
+        N sites. Limit: 1."
+
         Returns the newly added meas_node.
         """
         meas_node_name = meas_node_name or MFPortal.MEAS_NODE_NAME
         meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
-        meas_nic_name = meas_nic_name or MFPortal.MEAS_NIC_NAME
 
         meas_node = slice_obj.add_node(name=meas_node_name, site=site)
         meas_node.set_capacities(cores=cores, ram=ram_gb, disk=disk_gb)
         meas_node.set_image(image)
 
-        iface = meas_node.add_component(
-            model="NIC_Basic", name=meas_nic_name
-        ).get_interfaces()[0]
-        slice_obj.add_l3network(name=meas_network_name, interfaces=[iface], type="IPv6")
+        meas_node.add_fabnet(name=meas_network_name, net_type="IPv6")
 
         print("Meas node added to slice:")
-        print(f"  {meas_node_name} <-- {meas_nic_name} --> {meas_network_name}  (FABNetv6)")
+        print(f"  {meas_node_name} <-- FABNetv6 --> {MFPortal.meas_fabnet_name(meas_network_name, site)}")
 
         return meas_node
 
@@ -217,12 +232,20 @@ class MFPortal(MFLib):
         static address, not the SLAAC/EUI-64 address assigned by
         post_boot_config().
 
+        `meas_network_name` is the base name passed to add_meas_node()/
+        add_meas_network() (which use node.add_fabnet() under the hood) —
+        this resolves it to that node's actual per-site network via
+        meas_fabnet_name(), since a FABNetv6 network can only exist at one
+        site, so nodes at different sites are never on the same actual
+        network even though they share a base name.
+
         Returns a dict: node_ipv6, meas_net_subnet, gw_v6, dev.
         """
         meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+        site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
 
-        net_obj = slice_obj.get_network(meas_network_name)
-        iface_obj = node.get_interface(network_name=meas_network_name)
+        net_obj = slice_obj.get_network(site_network_name)
+        iface_obj = node.get_interface(network_name=site_network_name)
         net_obj.config()
 
         subnet_v6 = net_obj.get_subnet()
@@ -254,17 +277,33 @@ class MFPortal(MFLib):
         }
 
     @staticmethod
-    def add_meas_network(slice_obj, meas_network_name=None, meas_nic_name=None):
+    def add_meas_network(slice_obj, meas_network_name=None):
         """
-        Ensures every node in the slice is wired onto the FABNetv6 meas
+        Ensures every node in the slice is wired onto a FABNetv6 meas
         network with a static IP assigned.
 
-        For each node: if it already has an interface on meas_network_name,
-        it's left alone — a note is printed and the node is skipped.
-        Otherwise a NIC_Basic component is added, attached to the network,
-        and assign_static_fabnet6_ip() is called to give it a static
-        address. Creates meas_network_name itself first if it doesn't
-        already exist.
+        FABRIC enforces that a single FABNetv6 (or FABNetv4) network can
+        only span one site — trying to attach nodes from multiple sites to
+        one shared network fails at submit time with an orchestrator error
+        ("Service ... of type FABNetv6 cannot span N sites. Limit: 1.").
+        So rather than one shared network for the whole slice, this uses
+        node.add_fabnet() per node, which creates (or reuses) a FABNetv6
+        network local to *that node's own site* and adds a route to
+        FablibManager.FABNETV6_SUBNET — the FABRIC-wide address space every
+        site's local network is carved out of. Because every node ends up
+        with a route to that same top-level subnet, nodes at different
+        sites can still reach each other, the same way
+        MFLib.addMeasNode() does it manually for FABNetv4 with per-site
+        l3_meas_net_<site> networks + add_route(). add_meas_node() uses
+        this same mechanism for the meas node itself, so both land on
+        "<meas_network_name>_IPv6_<site>" networks (meas_fabnet_name()).
+
+        For each node: if it already has an interface on its own
+        meas_fabnet_name() network, it's left alone — a note is printed
+        and the node is skipped (add_fabnet() itself always adds a new NIC
+        unconditionally, so this check is what makes repeat calls safe).
+        Otherwise node.add_fabnet() wires it up and assign_static_fabnet6_ip()
+        is called to give it a static address.
 
         Note: adding a component to a node implies the slice supports
         adding hardware after submission (fablib's modify/resubmit flow).
@@ -284,24 +323,17 @@ class MFPortal(MFLib):
         are not included.
         """
         meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
-        meas_nic_name = meas_nic_name or MFPortal.MEAS_NIC_NAME
-
-        net_obj = slice_obj.get_network(meas_network_name)
-        if net_obj is None:
-            print(f"Creating FABNetv6 network {meas_network_name}.")
-            net_obj = slice_obj.add_l3network(name=meas_network_name, type="IPv6")
 
         newly_wired = []
         for node in slice_obj.get_nodes():
-            if node.get_interface(network_name=meas_network_name) is not None:
-                print(f"{node.get_name()}: FABNetv6 NIC on {meas_network_name} already exists — skipping.")
+            site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
+
+            if node.get_interface(network_name=site_network_name) is not None:
+                print(f"{node.get_name()}: FABNetv6 NIC on {site_network_name} already exists — skipping.")
                 continue
 
-            print(f"{node.get_name()}: adding FABNetv6 NIC on {meas_network_name}.")
-            iface = node.add_component(
-                model="NIC_Basic", name=meas_nic_name
-            ).get_interfaces()[0]
-            net_obj.add_interface(iface)
+            print(f"{node.get_name()}: adding FABNetv6 NIC via add_fabnet() ({site_network_name}).")
+            node.add_fabnet(name=meas_network_name, net_type="IPv6")
             newly_wired.append(node)
 
         if newly_wired:
