@@ -189,6 +189,12 @@ class MFPortal(MFLib):
             wait_interval=wait_interval,
             progress=progress,
         )
+        # submit()'s default Jupyter fast path returns before refreshing the
+        # slice's cached network_services/interfaces — without this, an
+        # immediately-following get_network()/get_interface() call (e.g. in
+        # collect_node_info()/assign_static_fabnet6_ip()) can still see
+        # pre-submit state.
+        slice_obj.update()
         print(f"\nSlice up — ID: {slice_obj.get_slice_id()}")
         return slice_obj
 
@@ -339,6 +345,11 @@ class MFPortal(MFLib):
         if newly_wired:
             print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
             slice_obj.submit()
+            # submit()'s default Jupyter fast path returns before refreshing
+            # the slice's cached network_services/interfaces, so
+            # get_network()/get_interface() below can still see the
+            # pre-submit state without this.
+            slice_obj.update()
 
         results = {}
         for node in newly_wired:
