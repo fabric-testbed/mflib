@@ -440,6 +440,13 @@ class MFPortal(MFLib):
         Creates (or loads) an mfuser SSH key pair and creates the mfuser
         account on `node` with that key authorized.
 
+        In addition to authorizing the public key, both the private and
+        public key are saved into mfuser's own ~/.ssh as mfuser_private_key
+        / mfuser_public_key — the hosts.ini this class generates
+        (see build_meas_node_hosts_ini()) points
+        ansible_ssh_private_key_file at exactly that path, so ansible needs
+        the private key sitting there, not just the public key authorized.
+
         Returns (mfuser_private_key, mfuser_public_key) as strings.
         """
         if key_path and pub_path:
@@ -448,6 +455,7 @@ class MFPortal(MFLib):
                 mfuser_private_key = f.read()
             with open(pub_path) as f:
                 mfuser_public_key = f.read().strip()
+            local_priv_path, local_pub_path = key_path, pub_path
         else:
             save_prefix = f"{slice_name}_mfuser"
             key = paramiko.RSAKey.generate(2048)
@@ -455,11 +463,13 @@ class MFPortal(MFLib):
             key.write_private_key(buf)
             mfuser_private_key = buf.getvalue()
             mfuser_public_key = f"ssh-rsa {key.get_base64()} mfuser"
-            with open(f"{save_prefix}.key", "w") as f:
+            local_priv_path = f"{save_prefix}.key"
+            local_pub_path = f"{save_prefix}.pub"
+            with open(local_priv_path, "w") as f:
                 f.write(mfuser_private_key)
-            with open(f"{save_prefix}.pub", "w") as f:
+            with open(local_pub_path, "w") as f:
                 f.write(mfuser_public_key + "\n")
-            print(f"Keys saved: {save_prefix}.key  /  {save_prefix}.pub")
+            print(f"Keys saved: {local_priv_path}  /  {local_pub_path}")
 
         cmd = " && ".join([
             "sudo useradd -s /bin/bash -G root -m mfuser || true",
@@ -472,6 +482,22 @@ class MFPortal(MFLib):
         ])
         stdout, stderr = node.execute(cmd)
         print("mfuser account ready.")
+        if stderr:
+            print("stderr:", stderr[:200])
+
+        # Save both keys into mfuser's own ~/.ssh too (not just the
+        # authorized_keys entry above) -- uploaded rather than echo'd since
+        # the private key is multi-line PEM text.
+        node.upload_file(local_priv_path, "/tmp/mfuser_private_key")
+        node.upload_file(local_pub_path, "/tmp/mfuser_public_key")
+        key_cmd = " && ".join([
+            "sudo mv /tmp/mfuser_private_key /home/mfuser/.ssh/mfuser_private_key",
+            "sudo mv /tmp/mfuser_public_key /home/mfuser/.ssh/mfuser_public_key",
+            "sudo chmod 600 /home/mfuser/.ssh/mfuser_private_key",
+            "sudo chmod 644 /home/mfuser/.ssh/mfuser_public_key",
+            "sudo chown mfuser:mfuser /home/mfuser/.ssh/mfuser_private_key /home/mfuser/.ssh/mfuser_public_key",
+        ])
+        _, stderr = node.execute(key_cmd)
         if stderr:
             print("stderr:", stderr[:200])
 
