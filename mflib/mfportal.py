@@ -409,6 +409,49 @@ class MFPortal(MFLib):
             "meas_net": MFPortal.get_meas_net(slice_obj, meas_network_name=meas_network_name),
         }
 
+    @staticmethod
+    def minimal_register_data(slice_obj, mfuser_private_key, mfuser_public_key):
+        """
+        Returns a minimal JSON-serializable dict for registration: the
+        current user's FABRIC id_token, this slice's UUID, and the mfuser
+        key pair. Unlike collect_register_meas_node_args()/
+        collect_slice_register_info(), this doesn't touch any node or
+        network at all -- just slice_obj itself and the keys the caller
+        already has from setup_mfuser_account()/setup_mfuser_accounts().
+        """
+        id_token = slice_obj.get_fablib_manager().get_manager().get_id_token()
+
+        return {
+            "id_token": id_token,
+            "slice_uuid": slice_obj.get_slice_id(),
+            "mfuser_private_key": mfuser_private_key,
+            "mfuser_public_key": mfuser_public_key,
+        }
+
+    @staticmethod
+    def minimal_portal_register(data, portal_url):
+        """
+        POSTs `data` (e.g. from minimal_register_data()) to `portal_url` as
+        the JSON body. `portal_url` is used exactly as given -- no path is
+        appended, unlike register_meas_node()'s fixed /api/meas-node/
+        register suffix -- so callers point this at whatever the portal's
+        actual minimal-registration endpoint turns out to be.
+
+        Returns the portal's parsed JSON response, or {'error': str(exc)}
+        if the request failed.
+        """
+        print(f"Registering with portal at {portal_url} ...")
+        try:
+            resp = _req.post(portal_url, json=data, timeout=30)
+            resp.raise_for_status()
+            response = resp.json()
+            print(f"Status   : {response.get('status')}")
+            print(json.dumps(response, indent=2))
+            return response
+        except Exception as exc:
+            print(f"Registration failed: {exc}")
+            return {"error": str(exc)}
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
