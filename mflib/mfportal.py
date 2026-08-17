@@ -283,7 +283,7 @@ class MFPortal(MFLib):
         }
 
     @staticmethod
-    def add_meas_network(slice_obj, meas_network_name=None):
+    def add_meas_network(slice_obj, meas_network_name=None, assign_static_fabnet6_ip=False):
         """
         Ensures every node in the slice is wired onto a FABNetv6 meas
         network with a static IP assigned.
@@ -352,10 +352,11 @@ class MFPortal(MFLib):
             slice_obj.update()
 
         results = {}
-        for node in newly_wired:
-            results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
-                slice_obj, node, meas_network_name=meas_network_name
-            )
+        if (assign_static_fabnet6_ip):
+            for node in newly_wired:
+                results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
+                    slice_obj, node, meas_network_name=meas_network_name
+                )
 
         return results
 
