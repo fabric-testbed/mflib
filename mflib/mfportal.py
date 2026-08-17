@@ -344,7 +344,8 @@ class MFPortal(MFLib):
 
         if newly_wired:
             print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
-            slice_obj.submit()
+            slice_obj.submit(wait=False)
+            slice_obj.update()
             # submit()'s default Jupyter fast path returns before refreshing
             # the slice's cached network_services/interfaces, so
             # get_network()/get_interface() below can still see the
