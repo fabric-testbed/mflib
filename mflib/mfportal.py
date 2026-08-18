@@ -347,15 +347,25 @@ class MFPortal(MFLib):
 
         if newly_wired:
             print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
-            # wait=False (used previously) skips ALL resource-readiness
-            # waiting, not just the SSH check -- submit() falls straight
-            # to `self.update(); return` without ever calling self.wait(),
-            # so the new network's IP pool isn't populated yet and
-            # get_available_ips() below comes back None. wait_ssh=False
-            # skips just the SSH reachability poll (the thing that was
-            # hanging) while wait=True still blocks until the new
-            # NIC/network resources reach Active state.
-            slice_obj.submit(wait=True, wait_ssh=False)
+            # wait=False skips ALL resource-readiness waiting (submit()
+            # falls straight to `self.update(); return`), so the new
+            # network's IP pool isn't populated yet and
+            # get_available_ips() below comes back None.
+            #
+            # But submit(wait=True) is worse here: since this runs inside
+            # an actual Jupyter kernel, submit() takes its wait_jupyter()
+            # fast path, which -- once the slice is stable -- unconditionally
+            # calls post_boot_config(). post_boot_config() itself finishes
+            # by calling self.submit() *again* internally ("Saving fablib
+            # data...") to push user_data back to the orchestrator, and
+            # that nested submit's own wait() is what was raising
+            # SliceStateError (ModifyError) for this slice/modify.
+            #
+            # So the wait is driven manually instead of through submit(),
+            # to get resource-readiness waiting without ever routing
+            # through wait_jupyter()/post_boot_config()'s nested resubmit.
+            slice_obj.submit(wait=False)
+            slice_obj.wait(timeout=1800, interval=20)
             slice_obj.update()
 
         results = {}
