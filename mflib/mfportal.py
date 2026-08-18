@@ -347,12 +347,15 @@ class MFPortal(MFLib):
 
         if newly_wired:
             print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
-            slice_obj.submit(wait=False)
-            slice_obj.update()
-            # submit()'s default Jupyter fast path returns before refreshing
-            # the slice's cached network_services/interfaces, so
-            # get_network()/get_interface() below can still see the
-            # pre-submit state without this.
+            # wait=False (used previously) skips ALL resource-readiness
+            # waiting, not just the SSH check -- submit() falls straight
+            # to `self.update(); return` without ever calling self.wait(),
+            # so the new network's IP pool isn't populated yet and
+            # get_available_ips() below comes back None. wait_ssh=False
+            # skips just the SSH reachability poll (the thing that was
+            # hanging) while wait=True still blocks until the new
+            # NIC/network resources reach Active state.
+            slice_obj.submit(wait=True, wait_ssh=False)
             slice_obj.update()
 
         results = {}
