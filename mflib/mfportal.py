@@ -283,7 +283,7 @@ class MFPortal(MFLib):
         }
 
     @staticmethod
-    def add_meas_network(slice_obj, meas_network_name=None, assign_static_fabnet6_ip=False):
+    def add_meas_network(slice_obj, meas_network_name=None, assign_static_fabnet6_ip=False, results_file=None):
         """
         Ensures every node in the slice is wired onto a FABNetv6 meas
         network with a static IP assigned.
@@ -324,6 +324,9 @@ class MFPortal(MFLib):
         already-submitted slice to add hardware; older versions may need
         slice_obj.modify()/modify_accept() instead.
 
+        If results_file is given, the results dict is also written there as
+        JSON. Left as None (the default), nothing is saved to disk.
+
         Returns {node_name: assign_static_fabnet6_ip() result} for every
         node that was newly wired up. Nodes that already had a FABNetv6 NIC
         are not included.
@@ -359,10 +362,10 @@ class MFPortal(MFLib):
                     slice_obj, node, meas_network_name=meas_network_name
                 )
 
-        results_file = Path.cwd() / "add_meas_network_results.json"
-        with open(results_file, "w") as f:
-            json.dump(results, f, indent=2)
-        print(f"add_meas_network results written to {results_file}")
+        if results_file is not None:
+            with open(results_file, "w") as f:
+                json.dump(results, f, indent=2)
+            print(f"add_meas_network results written to {results_file}")
 
         return results
 
