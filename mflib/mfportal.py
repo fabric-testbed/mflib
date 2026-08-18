@@ -359,6 +359,11 @@ class MFPortal(MFLib):
                     slice_obj, node, meas_network_name=meas_network_name
                 )
 
+        results_file = Path.cwd() / "add_meas_network_results.json"
+        with open(results_file, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"add_meas_network results written to {results_file}")
+
         return results
 
     @staticmethod
