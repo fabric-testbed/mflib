@@ -455,13 +455,16 @@ class MFPortal(MFLib):
         Like minimal_register_data(), but also includes a `meas_net_nodes`
         list -- get_meas_net()'s {node_name: assign_static_fabnet6_ip()
         result} dict flattened into a list of dicts, each with
-        `node_name`/`site` folded in alongside
-        node_ipv6/meas_net_subnet/gw_v6/dev. Nodes without a wired-up
-        FABNetv6 NIC are omitted, same as get_meas_net().
+        `node_name`/`site`/`network_name` folded in alongside
+        node_ipv6/meas_net_subnet/gw_v6/dev. `network_name` is the actual
+        per-site FABNetv6 network name (meas_fabnet_name()), e.g.
+        "meas-net6_IPv6_GATECH". Nodes without a wired-up FABNetv6 NIC are
+        omitted, same as get_meas_net().
 
         Returns a dict: id_token, slice_uuid, mfuser_private_key,
         mfuser_public_key, meas_net_nodes.
         """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
         id_token = slice_obj.get_fablib_manager().get_manager().get_id_token()
 
         nodes_by_name = {node.get_name(): node for node in slice_obj.get_nodes()}
@@ -470,6 +473,9 @@ class MFPortal(MFLib):
             {
                 "node_name": node_name,
                 "site": nodes_by_name[node_name].get_site(),
+                "network_name": MFPortal.meas_fabnet_name(
+                    meas_network_name, nodes_by_name[node_name].get_site()
+                ),
                 **ip_info,
             }
             for node_name, ip_info in meas_net.items()
