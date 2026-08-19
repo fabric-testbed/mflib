@@ -283,10 +283,13 @@ class MFPortal(MFLib):
         }
 
     @staticmethod
-    def add_meas_network(slice_obj, meas_network_name=None, assign_static_fabnet6_ip=False, results_file=None):
+    def add_meas_network(slice_obj, meas_network_name=None, results_file=None):
         """
         Ensures every node in the slice is wired onto a FABNetv6 meas
-        network with a static IP assigned.
+        network, submitting the slice to provision the new NIC(s)/network.
+        Does not assign IPs itself -- call assign_static_fabnet6_ip() or
+        get_meas_net() afterward for that (get_meas_net() covers every
+        wired node in the slice, not just ones this call just wired up).
 
         FABRIC enforces that a single FABNetv6 (or FABNetv4) network can
         only span one site — trying to attach nodes from multiple sites to
@@ -308,8 +311,7 @@ class MFPortal(MFLib):
         meas_fabnet_name() network, it's left alone — a note is printed
         and the node is skipped (add_fabnet() itself always adds a new NIC
         unconditionally, so this check is what makes repeat calls safe).
-        Otherwise node.add_fabnet() wires it up and assign_static_fabnet6_ip()
-        is called to give it a static address.
+        Otherwise node.add_fabnet() wires it up.
 
         Note: adding a component to a node implies the slice supports
         adding hardware after submission (fablib's modify/resubmit flow).
@@ -317,19 +319,20 @@ class MFPortal(MFLib):
         the slice is (re)submitted — before that, the network has no real
         subnet/gateway from FABRIC yet, so assign_static_fabnet6_ip() would
         fail with net_obj.get_available_ips() returning None. This method
-        calls slice_obj.submit() after wiring up any new NICs, before
-        assigning IPs, to cover both the pre-submit case (initial slice
-        build) and the already-submitted case (retrofitting an existing
-        slice) — assuming your fablib version supports resubmitting an
-        already-submitted slice to add hardware; older versions may need
-        slice_obj.modify()/modify_accept() instead.
+        calls slice_obj.submit() after wiring up any new NICs, so both the
+        pre-submit case (initial slice build) and the already-submitted
+        case (retrofitting an existing slice) end with the new NIC(s)
+        actually provisioned before returning — assuming your fablib
+        version supports resubmitting an already-submitted slice to add
+        hardware; older versions may need slice_obj.modify()/modify_accept()
+        instead.
 
-        If results_file is given, the results dict is also written there as
-        JSON. Left as None (the default), nothing is saved to disk.
+        If results_file is given, the list of newly-wired node names is
+        also written there as JSON. Left as None (the default), nothing is
+        saved to disk.
 
-        Returns {node_name: assign_static_fabnet6_ip() result} for every
-        node that was newly wired up. Nodes that already had a FABNetv6 NIC
-        are not included.
+        Returns the list of node names that were newly wired up. Nodes
+        that already had a FABNetv6 NIC are not included.
         """
         meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
 
@@ -346,7 +349,7 @@ class MFPortal(MFLib):
             newly_wired.append(node)
 
         if newly_wired:
-            print("Submitting slice to provision new NIC(s)/network before assigning IPs...")
+            print("Submitting slice to provision new NIC(s)/network...")
             # wait=False skips ALL resource-readiness waiting (submit()
             # falls straight to `self.update(); return`), so the new
             # network's IP pool isn't populated yet and
@@ -368,28 +371,23 @@ class MFPortal(MFLib):
             slice_obj.wait(timeout=1800, interval=20)
             slice_obj.update()
 
-        results = {}
-        if (assign_static_fabnet6_ip):
-            for node in newly_wired:
-                results[node.get_name()] = MFPortal.assign_static_fabnet6_ip(
-                    slice_obj, node, meas_network_name=meas_network_name
-                )
+        newly_wired_names = [node.get_name() for node in newly_wired]
 
         if results_file is not None:
             with open(results_file, "w") as f:
-                json.dump(results, f, indent=2)
+                json.dump(newly_wired_names, f, indent=2)
             print(f"add_meas_network results written to {results_file}")
 
-        return results
+        return newly_wired_names
 
     @staticmethod
     def get_meas_net(slice_obj, meas_network_name=None):
         """
         Returns {node_name: assign_static_fabnet6_ip() result} for every
         node in the slice that already has a FABNetv6 meas NIC wired up
-        (via add_meas_node()/add_meas_network()) -- a read-only query,
-        unlike add_meas_network() which only reports on nodes it just
-        wired up. Nodes without one (e.g. the meas node doesn't exist in
+        (via add_meas_node()/add_meas_network()) -- covers the whole slice,
+        unlike add_meas_network() which only wires NICs and doesn't assign
+        IPs itself. Nodes without one (e.g. the meas node doesn't exist in
         this slice, or a node just hasn't been wired yet) are silently
         skipped rather than raising.
         """
