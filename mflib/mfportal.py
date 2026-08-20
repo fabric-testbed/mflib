@@ -368,8 +368,44 @@ class MFPortal(MFLib):
             # to get resource-readiness waiting without ever routing
             # through wait_jupyter()/post_boot_config()'s nested resubmit.
             slice_obj.submit(wait=False)
-            slice_obj.wait(timeout=1800, interval=20)
+            # timeout=300 (not fablib submit()'s own 1800s default): that
+            # default is sized for *initial* slice creation (new VMs
+            # booting), but this wait is only for a lightweight "add a NIC
+            # to already-active nodes" modify, which normally resolves in
+            # well under a couple minutes. wait() returns as soon as the
+            # slice reaches StableOK/ModifyOK (or raises immediately on an
+            # error state), so a shorter timeout doesn't slow down the
+            # normal successful path -- it only controls how long to wait
+            # before giving up if the modify is genuinely stuck.
+            slice_obj.wait(timeout=300, interval=20)
             slice_obj.update()
+
+            # slice_obj.update() -> Node.update() calls
+            # node.get_interfaces(refresh=True) internally, but swallows any
+            # exception raised while the FIM topology is still in a
+            # transitional post-modify state (fablib's own node.py flags
+            # this explicitly) -- and still marks the node's cache clean
+            # either way. That can leave get_interface() silently returning
+            # None for a NIC that really does exist now, with no error
+            # raised anywhere. So confirm each newly-wired node's NIC is
+            # actually visible, forcing a fresh retry if fablib's cache got
+            # stuck stale.
+            for node in newly_wired:
+                site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
+                for attempt in range(6):
+                    if node.get_interface(network_name=site_network_name) is not None:
+                        break
+                    print(
+                        f"{node.get_name()}: NIC on {site_network_name} not visible yet "
+                        f"(attempt {attempt + 1}/6) — retrying refresh..."
+                    )
+                    time.sleep(5)
+                    node.get_interfaces(refresh=True)
+                else:
+                    print(
+                        f"{node.get_name()}: WARNING — FABNetv6 NIC on {site_network_name} "
+                        "still not visible after retries."
+                    )
 
         newly_wired_names = [node.get_name() for node in newly_wired]
 
