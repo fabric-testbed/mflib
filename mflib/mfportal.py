@@ -379,8 +379,7 @@ class MFPortal(MFLib):
             # So the wait is driven manually instead of through submit(),
             # to get resource-readiness waiting without ever routing
             # through wait_jupyter()/post_boot_config()'s nested resubmit.
-            ##### 
-            slice_obj.submit()
+            slice_obj.submit(wait=False)
             
             # timeout=600 (not fablib submit()'s own 1800s default): that
             # default is sized for *initial* slice creation (new VMs
@@ -391,7 +390,7 @@ class MFPortal(MFLib):
             # error state), so a shorter timeout doesn't slow down the
             # normal successful path -- it only controls how long to wait
             # before giving up if the modify is genuinely stuck.
-            ##### slice_obj.wait(timeout=600, interval=20)
+            slice_obj.wait(timeout=600, interval=20)
             slice_obj.update()
 
             # node.get_interfaces(refresh=True) is NOT a network call -- it
@@ -440,6 +439,64 @@ class MFPortal(MFLib):
             print(f"add_meas_network results written to {results_file}")
 
         return newly_wired_names
+
+    @staticmethod
+    def add_meas_network_presubmit(slice_obj, meas_network_name=None):
+        """
+        Wires every node in a NOT-YET-SUBMITTED slice onto a per-site
+        FABNetv6 meas network, so the network is requested as part of the
+        slice's *first* create request instead of being retrofitted onto
+        an already-submitted slice via modify.
+
+        This exists to test whether requesting a FABNetv6 network at
+        initial slice creation reliably produces a real, queryable
+        network service, as a workaround for a modify-path failure where
+        the new network's reservation is created (no error at the time)
+        but the network never appears in the topology afterward and its
+        interfaces later show up in Closed state -- see
+        notes/fabnetv6-modify-network-not-in-topology.md for the full
+        writeup. add_meas_network() is the equivalent for a slice that's
+        already been submitted.
+
+        Unlike add_meas_network(), this does not call slice_obj.submit()
+        or wait for anything -- there's nothing to wait for yet, since
+        nothing has been requested from the orchestrator. Call this
+        *before* slice_obj.submit(), then submit the slice yourself as
+        you normally would when building a new slice.
+
+        Same per-site restriction as add_meas_network(): a FABNetv6
+        network can only exist at one site, so this uses
+        node.add_fabnet() per node (creating/reusing a per-site network)
+        rather than one shared network for the whole slice.
+
+        Raises ValueError if called on a slice that's already been
+        submitted (has a slice_id) -- use add_meas_network() for that
+        case instead.
+
+        Returns the list of node names that were wired up.
+        """
+        if slice_obj.get_slice_id() is not None:
+            raise ValueError(
+                "add_meas_network_presubmit() is for a slice that hasn't been "
+                f"submitted yet, but this slice already has slice_id={slice_obj.get_slice_id()!r}. "
+                "Use add_meas_network() to retrofit an already-submitted slice instead."
+            )
+
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+
+        wired_names = []
+        for node in slice_obj.get_nodes():
+            site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
+
+            if node.get_interface(network_name=site_network_name) is not None:
+                print(f"{node.get_name()}: FABNetv6 NIC on {site_network_name} already exists — skipping.")
+                continue
+
+            print(f"{node.get_name()}: adding FABNetv6 NIC via add_fabnet() ({site_network_name}).")
+            node.add_fabnet(name=meas_network_name, net_type="IPv6")
+            wired_names.append(node.get_name())
+
+        return wired_names
 
     @staticmethod
     def get_meas_net(slice_obj, meas_network_name=None):
@@ -1459,3 +1516,10 @@ class MFPortal(MFLib):
         else:
             print("  Portal        : not registered")
         print(sep)
+
+
+
+
+    @staticmethod
+    def why_add_meas_network(slice_obj):
+        for node in slice_
