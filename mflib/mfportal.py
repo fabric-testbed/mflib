@@ -1518,8 +1518,3 @@ class MFPortal(MFLib):
         print(sep)
 
 
-
-
-    @staticmethod
-    def why_add_meas_network(slice_obj):
-        for node in slice_
