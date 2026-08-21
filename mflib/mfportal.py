@@ -392,32 +392,43 @@ class MFPortal(MFLib):
             slice_obj.wait(timeout=600, interval=20)
             slice_obj.update()
 
-            # slice_obj.update() -> Node.update() calls
-            # node.get_interfaces(refresh=True) internally, but swallows any
-            # exception raised while the FIM topology is still in a
-            # transitional post-modify state (fablib's own node.py flags
-            # this explicitly) -- and still marks the node's cache clean
-            # either way. That can leave get_interface() silently returning
-            # None for a NIC that really does exist now, with no error
-            # raised anywhere. So confirm each newly-wired node's NIC is
-            # actually visible, forcing a fresh retry if fablib's cache got
-            # stuck stale.
-            for node in newly_wired:
+            # node.get_interfaces(refresh=True) is NOT a network call -- it
+            # only re-derives from this node's own already-held fim_node
+            # graph object, so retrying it can never pick up a NIC that
+            # isn't in that snapshot yet. The orchestrator only actually
+            # gets re-queried by slice_obj.update() -> update_topology()
+            # (list_slices(..., return_fmt="dto")), which then updates each
+            # node's fim_node in place. If the topology was still in a
+            # transitional post-modify state when the update() above ran,
+            # get_interface() can come back None for a NIC that really
+            # does exist now, with no error raised anywhere -- so re-fetch
+            # the whole slice a few times and recheck, rather than retrying
+            # a per-node call that never talks to the orchestrator at all.
+            def _still_missing(nodes):
+                return [
+                    node for node in nodes
+                    if node.get_interface(
+                        network_name=MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
+                    ) is None
+                ]
+
+            pending = _still_missing(newly_wired)
+            attempt = 0
+            while pending and attempt < 6:
+                print(
+                    f"NIC(s) not visible yet for: {[node.get_name() for node in pending]} "
+                    f"(attempt {attempt + 1}/6) — refetching slice topology..."
+                )
+                time.sleep(5)
+                slice_obj.update()
+                pending = _still_missing(pending)
+                attempt += 1
+            for node in pending:
                 site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
-                for attempt in range(6):
-                    if node.get_interface(network_name=site_network_name) is not None:
-                        break
-                    print(
-                        f"{node.get_name()}: NIC on {site_network_name} not visible yet "
-                        f"(attempt {attempt + 1}/6) — retrying refresh..."
-                    )
-                    time.sleep(5)
-                    node.get_interfaces(refresh=True)
-                else:
-                    print(
-                        f"{node.get_name()}: WARNING — FABNetv6 NIC on {site_network_name} "
-                        "still not visible after retries."
-                    )
+                print(
+                    f"{node.get_name()}: WARNING — FABNetv6 NIC on {site_network_name} "
+                    "still not visible after retries."
+                )
 
         newly_wired_names = [node.get_name() for node in newly_wired]
 
