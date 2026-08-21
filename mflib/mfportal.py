@@ -379,7 +379,9 @@ class MFPortal(MFLib):
             # So the wait is driven manually instead of through submit(),
             # to get resource-readiness waiting without ever routing
             # through wait_jupyter()/post_boot_config()'s nested resubmit.
-            slice_obj.submit(wait=False)
+            ##### 
+            slice_obj.submit()
+            
             # timeout=600 (not fablib submit()'s own 1800s default): that
             # default is sized for *initial* slice creation (new VMs
             # booting), but this wait is only for a lightweight "add a NIC
@@ -389,7 +391,7 @@ class MFPortal(MFLib):
             # error state), so a shorter timeout doesn't slow down the
             # normal successful path -- it only controls how long to wait
             # before giving up if the modify is genuinely stuck.
-            slice_obj.wait(timeout=600, interval=20)
+            ##### slice_obj.wait(timeout=600, interval=20)
             slice_obj.update()
 
             # node.get_interfaces(refresh=True) is NOT a network call -- it
