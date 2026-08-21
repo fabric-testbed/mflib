@@ -345,7 +345,19 @@ class MFPortal(MFLib):
                 continue
 
             print(f"{node.get_name()}: adding FABNetv6 NIC via add_fabnet() ({site_network_name}).")
-            node.add_fabnet(name=meas_network_name, net_type="IPv6")
+            try:
+                node.add_fabnet(name=meas_network_name, net_type="IPv6")
+            except Exception as e:
+                # The get_interface() check above catches most already-wired
+                # nodes, but it's a local-topology-cache check -- it can
+                # miss a NIC/network that genuinely exists on the
+                # orchestrator side already (e.g. a prior partially-applied
+                # run). Note it and move on to the next node instead of
+                # letting the exception abort the whole loop -- that would
+                # otherwise stop any still-missing nodes further down the
+                # list from ever being wired.
+                print(f"{node.get_name()}: add_fabnet() failed ({e}) — network/NIC may already exist, skipping.")
+                continue
             newly_wired.append(node)
 
         if newly_wired:
@@ -368,7 +380,7 @@ class MFPortal(MFLib):
             # to get resource-readiness waiting without ever routing
             # through wait_jupyter()/post_boot_config()'s nested resubmit.
             slice_obj.submit(wait=False)
-            # timeout=300 (not fablib submit()'s own 1800s default): that
+            # timeout=600 (not fablib submit()'s own 1800s default): that
             # default is sized for *initial* slice creation (new VMs
             # booting), but this wait is only for a lightweight "add a NIC
             # to already-active nodes" modify, which normally resolves in
@@ -377,7 +389,7 @@ class MFPortal(MFLib):
             # error state), so a shorter timeout doesn't slow down the
             # normal successful path -- it only controls how long to wait
             # before giving up if the modify is genuinely stuck.
-            slice_obj.wait(timeout=300, interval=20)
+            slice_obj.wait(timeout=600, interval=20)
             slice_obj.update()
 
             # slice_obj.update() -> Node.update() calls
