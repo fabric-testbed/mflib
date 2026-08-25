@@ -650,7 +650,7 @@ class MFLib(Core):
                     hosts.append(
                         f"{this_node.get_name()} "
                         f"ansible_host={ip_addr} "
-                        f"hostname={ip_addr} "
+                        f"hostname={this_node.get_name()} "
                         f"ansible_ssh_user={mfuser} "
                         f"node_exporter_listen_ip={ip_addr} "
                         f"ansible_ssh_common_args='-o StrictHostKeyChecking=no' "

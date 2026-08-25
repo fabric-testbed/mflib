@@ -1156,7 +1156,7 @@ class MFPortal(MFLib):
         host_fields = [
             meas_node_name,
             f"ansible_host={ansible_host}",
-            f"hostname={ansible_host}",
+            f"hostname={meas_node_name}",
             "ansible_ssh_user=mfuser",
             f"node_exporter_listen_ip={ansible_host}",
         ]
@@ -1389,7 +1389,7 @@ class MFPortal(MFLib):
             "    # before it runs.",
             "    ip_addr = discover_ip()",
             "    host_line = (",
-            '        f"{MEAS_NODE_NAME} ansible_host={ip_addr} hostname={ip_addr} "',
+            '        f"{MEAS_NODE_NAME} ansible_host={ip_addr} hostname={MEAS_NODE_NAME} "',
             '        f"ansible_ssh_user=mfuser node_exporter_listen_ip={ip_addr} "',
             '        f"ansible_connection=local"',
             "    )",
