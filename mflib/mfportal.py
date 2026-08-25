@@ -105,7 +105,8 @@ class MFPortal(MFLib):
         fablib,
         slice_name,
         site="EDC",
-        image="docker_ubuntu_20",
+        #image="docker_ubuntu_20",
+        image="default_ubuntu_24,
         cores=4,
         ram_gb=16,
         disk_gb=100,
@@ -137,7 +138,7 @@ class MFPortal(MFLib):
     def add_meas_node(
         slice_obj,
         site="EDC",
-        image="docker_ubuntu_20",
+        image="default_ubuntu_24",
         cores=4,
         ram_gb=16,
         disk_gb=100,
