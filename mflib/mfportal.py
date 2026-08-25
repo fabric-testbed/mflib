@@ -106,7 +106,7 @@ class MFPortal(MFLib):
         slice_name,
         site="EDC",
         #image="docker_ubuntu_20",
-        image="default_ubuntu_24,
+        image="default_ubuntu_24",
         cores=4,
         ram_gb=16,
         disk_gb=100,
