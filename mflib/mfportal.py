@@ -580,8 +580,22 @@ class MFPortal(MFLib):
         "meas-net6_IPv6_GATECH". Nodes without a wired-up FABNetv6 NIC are
         omitted, same as get_meas_net().
 
+        Also includes `registered_slice` -- {slice_id, slice_name, nodes,
+        mfuser_private_key}, in exactly the shape a meas node's
+        /home/mfuser/registered_slice.json expects (see
+        collect_registered_slice_info()). Derived from the same
+        meas_net_nodes computed above rather than calling get_meas_net()
+        a second time, since assign_static_fabnet6_ip() does real SSH
+        work per node. For the portal-managed-meas-node architecture (the
+        portal creates its own separate slice for the meas node, so this
+        client never has SSH access to it), the portal is expected to
+        write this sub-dict, verbatim, to that path once its meas node
+        exists -- see write_registered_slice_info()'s docstring for the
+        client-driven equivalent, used when the caller does have direct
+        node access.
+
         Returns a dict: id_token, slice_uuid, mfuser_private_key,
-        mfuser_public_key, meas_net_nodes.
+        mfuser_public_key, meas_net_nodes, registered_slice.
         """
         meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
         id_token = slice_obj.get_fablib_manager().get_manager().get_id_token()
@@ -600,12 +614,27 @@ class MFPortal(MFLib):
             for node_name, ip_info in meas_net.items()
         ]
 
+        registered_slice = {
+            "slice_id": slice_obj.get_slice_id(),
+            "slice_name": slice_obj.get_name(),
+            "nodes": [
+                {
+                    "name": node["node_name"],
+                    "ip_addr": node["node_ipv6"],
+                    "network": node["network_name"],
+                }
+                for node in meas_net_nodes
+            ],
+            "mfuser_private_key": mfuser_private_key,
+        }
+
         return {
             "id_token": id_token,
             "slice_uuid": slice_obj.get_slice_id(),
             "mfuser_private_key": mfuser_private_key,
             "mfuser_public_key": mfuser_public_key,
             "meas_net_nodes": meas_net_nodes,
+            "registered_slice": registered_slice,
         }
 
     @staticmethod
@@ -976,6 +1005,140 @@ class MFPortal(MFLib):
         return MFPortal.write_slice_info(slice_obj, **args)
 
     # ------------------------------------------------------------------
+    # Register the experiment slice's nodes (+ mfuser key) on a meas node
+    #
+    # Distinct from write_slice_info()'s portal_registration.json (info
+    # about the meas node itself for the portal to poll). This is the
+    # file meas_node_self_start()'s write_hosts_ini() reads to populate
+    # the [Experiment_Nodes] group of hosts.ini.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def collect_registered_slice_nodes(slice_obj, meas_network_name=None):
+        """
+        Builds the "nodes" list for write_registered_slice_info(): one
+        {name, ip_addr, network} entry per node in the slice that already
+        has a wired-up FABNetv6 meas NIC (via get_meas_net()). ip_addr is
+        the meas-net IP (assign_static_fabnet6_ip()'s node_ipv6), not the
+        node's FABRIC management IP -- that's the address a meas node
+        needs to actually reach it over the meas network. Nodes without a
+        wired-up NIC are omitted, same as get_meas_net().
+        """
+        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+        nodes_by_name = {node.get_name(): node for node in slice_obj.get_nodes()}
+        meas_net = MFPortal.get_meas_net(slice_obj, meas_network_name=meas_network_name)
+
+        return [
+            {
+                "name": node_name,
+                "ip_addr": ip_info["node_ipv6"],
+                "network": MFPortal.meas_fabnet_name(
+                    meas_network_name, nodes_by_name[node_name].get_site()
+                ),
+            }
+            for node_name, ip_info in meas_net.items()
+        ]
+
+    @staticmethod
+    def collect_registered_slice_info(slice_obj, mfuser_private_key, meas_network_name=None):
+        """
+        Builds the exact dict a meas node's registered_slice.json needs --
+        {slice_id, slice_name, nodes: [...], mfuser_private_key} -- without
+        writing it anywhere. Use this (rather than
+        write_registered_slice_info()) when the caller has no direct
+        fablib Node handle to the meas node that needs this data -- e.g.
+        the portal-managed-meas-node architecture, where the portal
+        creates its own separate slice for the meas node and the
+        experimenter's client never has SSH access to it. Fold this
+        dict's contents into whatever payload gets sent to the portal
+        (collect_full_register_data() builds the equivalent inline, as
+        part of its own `registered_slice` key, to avoid calling
+        get_meas_net() a second time -- use this standalone version if
+        you just need this dict on its own); the portal is then
+        responsible for writing it, verbatim, to
+        /home/mfuser/registered_slice.json on the meas node once it
+        exists.
+
+        mfuser_private_key must be the experiment slice's own mfuser key
+        (the one authorized on Node1/Node2/etc, e.g. from
+        setup_mfuser_accounts()) -- NOT necessarily the same key
+        authorized on the meas node's own account. See
+        write_registered_slice_info()'s docstring for why those two keys
+        are treated as independent.
+
+        Returns the dict.
+        """
+        return {
+            "slice_id": slice_obj.get_slice_id(),
+            "slice_name": slice_obj.get_name(),
+            "nodes": MFPortal.collect_registered_slice_nodes(
+                slice_obj, meas_network_name=meas_network_name
+            ),
+            "mfuser_private_key": mfuser_private_key,
+        }
+
+    @staticmethod
+    def write_registered_slice_info(
+        meas_node,
+        slice_obj,
+        mfuser_private_key,
+        meas_network_name=None,
+        remote_path="/home/mfuser/registered_slice.json",
+    ):
+        """
+        Writes /home/mfuser/registered_slice.json onto `meas_node` --
+        {slice_id, slice_name, nodes: [...], mfuser_private_key}. This is
+        the file meas_node_self_start()'s write_hosts_ini() reads to
+        build the full [Experiment_Nodes] section of hosts.ini instead of
+        leaving it empty.
+
+        If you haven't called meas_node_self_start() on this node yet,
+        prefer passing this method's result (or
+        collect_registered_slice_info()'s dict) as meas_node_self_start()'s
+        own registered_slice argument instead of calling this separately
+        beforehand -- that writes the file before the self-start service
+        is installed/enabled/started, removing the race where the
+        service's very first run finds no file yet (see that method's
+        docstring). Call this method directly for updating/re-adding nodes
+        on a meas node whose self-start service has already run.
+
+        Only usable when the caller has a direct fablib Node handle for
+        `meas_node` -- e.g. a meas node embedded in the same experiment
+        slice (add_meas_node()-style). For the portal-managed-meas-node
+        architecture, where the portal creates its own separate slice for
+        the meas node, use collect_registered_slice_info() instead and
+        send its contents to the portal; the portal has to perform the
+        equivalent write itself once that meas node exists, since this
+        client has no SSH access to it.
+
+        mfuser_private_key must be the experiment slice's own mfuser key
+        (the one authorized on Node1/Node2/etc, e.g. from
+        setup_mfuser_accounts()) -- NOT necessarily the same key
+        authorized on meas_node's own account. The two are only the same
+        key today by coincidence, when the meas node happens to be part
+        of the same slice setup_mfuser_accounts() was run against; a meas
+        node the portal creates in its own separate slice would have its
+        own, different account key. meas_node_self_start() writes this
+        key to its own dedicated file (not meas_node's own
+        /home/mfuser/.ssh/mfuser_private_key) precisely so the two never
+        collide, and points [Experiment_Nodes]'s ansible_ssh_private_key_file
+        at that dedicated file instead.
+
+        The file embeds a private key, so it's chmod 600 / chown'd to
+        mfuser after writing, same as setup_mfuser_account() does for the
+        key file itself.
+
+        Returns the dict that was written.
+        """
+        registered_slice = MFPortal.collect_registered_slice_info(
+            slice_obj, mfuser_private_key, meas_network_name=meas_network_name
+        )
+
+        MFPortal.write_json_to_node(meas_node, registered_slice, remote_path)
+        meas_node.execute(f"sudo chown mfuser:mfuser {remote_path} && sudo chmod 600 {remote_path}")
+        print(f"Registered slice info written to {remote_path}")
+        return registered_slice
+
+    # ------------------------------------------------------------------
     # Cell 11 — Test Portal Connectivity
     #
     # Identical to first-draft-mfportal.py's check_portal_reachable — no
@@ -1301,7 +1464,7 @@ class MFPortal(MFLib):
     # on first boot, without a client driving it interactively.
     # ------------------------------------------------------------------
     @staticmethod
-    def meas_node_self_start(node, mf_repo_branch="main"):
+    def meas_node_self_start(node, mf_repo_branch="main", registered_slice=None):
         """
         Installs a systemd oneshot service on `node` that runs a small
         Python script to clone the MeasurementFramework repo, create the
@@ -1314,9 +1477,37 @@ class MFPortal(MFLib):
 
         The service starts immediately and also runs on every future boot
         (safe to re-run: git clone / mkdir / bootstrap.sh / the ansible
-        playbook are all idempotent here).
+        playbook are all idempotent here). "Starts immediately" is exactly
+        why registered_slice matters: the very first run of the installed
+        script's write_hosts_ini() reads /home/mfuser/registered_slice.json
+        to populate hosts.ini's [Experiment_Nodes] group, and that first
+        run can happen within seconds of this method returning. If the
+        file isn't there yet, that first run just falls back to an empty
+        [Experiment_Nodes] group -- not an error, but not what you want
+        either, and nothing here re-runs write_hosts_ini() later to pick
+        it up if it shows up afterward.
+
+        Pass registered_slice (collect_registered_slice_info()'s dict, or
+        write_registered_slice_info()'s return value) to have this method
+        write /home/mfuser/registered_slice.json on `node` itself, before
+        installing/enabling/starting the self-start service -- so the
+        first run is guaranteed to already have it, instead of depending
+        on the caller to separately call write_registered_slice_info()
+        first and get the ordering right. Left as None (the default), no
+        file is written here and the existing race/fallback behavior is
+        unchanged (e.g. because it was already written by a prior call, or
+        isn't known yet).
         """
         meas_node_name = MFPortal.MEAS_NODE_NAME
+
+        if registered_slice is not None:
+            registered_slice_path = "/home/mfuser/registered_slice.json"
+            MFPortal.write_json_to_node(node, registered_slice, registered_slice_path)
+            node.execute(
+                f"sudo chown mfuser:mfuser {registered_slice_path} && "
+                f"sudo chmod 600 {registered_slice_path}"
+            )
+            print(f"Registered slice info written to {registered_slice_path} (before self-start install).")
 
         self_start_script = "\n".join([
             "#!/usr/bin/env python3",
@@ -1335,6 +1526,7 @@ class MFPortal(MFLib):
             'HOSTS_INI_PATH = SERVICES_DIR + "/hosts.ini"',
             'SLICE_INFO_PATH = "/etc/mflib/portal_registration.json"',
             'REGISTERED_SLICE_PATH = "/home/mfuser/registered_slice.json"',
+            'EXPERIMENT_MFUSER_KEY_PATH = "/home/mfuser/.ssh/experiment_mfuser_key"',
             'ACTIONS_LOG_PATH = "/home/mfuser/mflib_self_start_actions.json"',
             f'MEAS_NODE_NAME = "{meas_node_name}"',
             "",
@@ -1383,21 +1575,26 @@ class MFPortal(MFLib):
             '        return "127.0.0.1"',
             "",
             "",
-            "def experiment_node_lines():",
-            "    # REGISTERED_SLICE_PATH is written by the client once the",
-            "    # experiment slice is registered:",
-            '    # {"slice_id", "slice_name", "nodes": [{"name", "ip_addr", "network"}, ...]}',
+            "def load_registered_slice():",
+            "    # Written by the client once the experiment slice is",
+            "    # registered:",
+            '    # {"slice_id", "slice_name", "nodes": [{"name", "ip_addr", "network"}, ...],',
+            '    #  "mfuser_private_key"}',
             "    # Absent until/unless that's happened -- treated as \"no",
             "    # experiment nodes yet\", not an error.",
             "    if not os.path.exists(REGISTERED_SLICE_PATH):",
-            "        return []",
+            "        return None",
             "    try:",
             "        with open(REGISTERED_SLICE_PATH) as f:",
-            "            registered = json.load(f)",
+            "            return json.load(f)",
             "    except Exception as e:",
             '        print(f"[mflib] WARNING: could not read {REGISTERED_SLICE_PATH}: {e}")',
-            "        return []",
+            "        return None",
             "",
+            "",
+            "def experiment_node_lines(registered):",
+            "    if not registered:",
+            "        return []",
             "    lines = []",
             '    for node in registered.get("nodes", []):',
             '        name = node.get("name")',
@@ -1419,6 +1616,24 @@ class MFPortal(MFLib):
             "    return lines",
             "",
             "",
+            "def write_experiment_mfuser_key(registered):",
+            "    # The experiment slice's own mfuser key -- NOT necessarily the",
+            "    # same key authorized on this meas node's own account, so it's",
+            "    # written to its own dedicated file rather than overwriting this",
+            "    # node's /home/mfuser/.ssh/mfuser_private_key. hosts.ini's",
+            "    # [Experiment_Nodes:vars] points ansible_ssh_private_key_file",
+            "    # here so ansible can actually reach those nodes.",
+            '    key = (registered or {}).get("mfuser_private_key")',
+            "    if not key:",
+            "        return",
+            "    os.makedirs(os.path.dirname(EXPERIMENT_MFUSER_KEY_PATH), exist_ok=True)",
+            '    with open(EXPERIMENT_MFUSER_KEY_PATH, "w") as f:',
+            "        f.write(key)",
+            "    os.chmod(EXPERIMENT_MFUSER_KEY_PATH, 0o600)",
+            '    subprocess.run(f"chown mfuser:mfuser {EXPERIMENT_MFUSER_KEY_PATH}", shell=True, check=False)',
+            '    print(f"[mflib] wrote {EXPERIMENT_MFUSER_KEY_PATH}")',
+            "",
+            "",
             "def write_hosts_ini():",
             "    # A meas-node (+ registered experiment nodes, if any) ansible",
             "    # inventory. The Meas_Node entry mirrors",
@@ -1433,9 +1648,11 @@ class MFPortal(MFLib):
             '        f"ansible_connection=local"',
             "    )",
             "",
-            "    exp_lines = experiment_node_lines()",
+            "    registered = load_registered_slice()",
+            "    exp_lines = experiment_node_lines(registered)",
             "    if exp_lines:",
             '        print(f"[mflib] adding {len(exp_lines)} registered experiment node(s) from {REGISTERED_SLICE_PATH}")',
+            "    write_experiment_mfuser_key(registered)",
             '    experiment_nodes_block = "\\n".join(exp_lines)',
             "",
             "    hosts_ini = \"\\n\".join([",
@@ -1447,6 +1664,9 @@ class MFPortal(MFLib):
             '        "",',
             '        "[Experiment_Nodes]",',
             "        experiment_nodes_block,",
+            '        "",',
+            '        "[Experiment_Nodes:vars]",',
+            '        f"ansible_ssh_private_key_file={EXPERIMENT_MFUSER_KEY_PATH}",',
             '        "",',
             '        "[elk:children]",',
             '        "Meas_Node",',
