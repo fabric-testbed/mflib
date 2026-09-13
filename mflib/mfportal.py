@@ -737,7 +737,7 @@ class MFPortal(MFLib):
     # meas node that isn't part of an experimenter's slice.
     # ------------------------------------------------------------------
     @staticmethod
-    def setup_mfuser_account(node, slice_name, key_path=None, pub_path=None):
+    def setup_mfuser_account(node, slice_name, slice_id=None, key_path=None, pub_path=None):
         """
         Creates (or loads) an mfuser SSH key pair and creates the mfuser
         account on `node` with that key authorized.
@@ -748,6 +748,14 @@ class MFPortal(MFLib):
         (see build_meas_node_hosts_ini()) points
         ansible_ssh_private_key_file at exactly that path, so ansible needs
         the private key sitting there, not just the public key authorized.
+
+        When a new key pair is generated (i.e. key_path/pub_path aren't
+        given), the public key's trailing comment is set to
+        "mfuser@{slice_name}:{slice_id}" (or just "mfuser@{slice_name}" if
+        slice_id isn't passed) instead of a bare "mfuser" -- so `ssh-keygen
+        -l -f` / authorized_keys / anything else that surfaces that
+        comment shows which slice a given key belongs to. Purely cosmetic:
+        SSH ignores the comment entirely for authentication.
 
         Returns (mfuser_private_key, mfuser_public_key) as strings.
         """
@@ -764,7 +772,8 @@ class MFPortal(MFLib):
             buf = io.StringIO()
             key.write_private_key(buf)
             mfuser_private_key = buf.getvalue()
-            mfuser_public_key = f"ssh-rsa {key.get_base64()} mfuser"
+            comment = f"mfuser@{slice_name}:{slice_id}" if slice_id else f"mfuser@{slice_name}"
+            mfuser_public_key = f"ssh-rsa {key.get_base64()} {comment}"
             local_priv_path = f"{save_prefix}.key"
             local_pub_path = f"{save_prefix}.pub"
             with open(local_priv_path, "w") as f:
@@ -809,10 +818,12 @@ class MFPortal(MFLib):
     def setup_mfuser_accounts(slice_obj, slice_name=None):
         """
         Calls setup_mfuser_account() for every node in the slice. The key
-        pair is generated once, on the first node; every other node reuses
-        that same key pair (via the key files setup_mfuser_account() saves
-        for the first node) instead of generating its own, so all nodes end
-        up trusting the same mfuser key.
+        pair is generated once, on the first node (with its public key
+        comment set to "mfuser@{slice_name}:{slice_obj.get_slice_id()}" --
+        see setup_mfuser_account()); every other node reuses that same
+        key pair (via the key files setup_mfuser_account() saves for the
+        first node) instead of generating its own, so all nodes end up
+        trusting the same mfuser key.
 
         Returns (mfuser_private_key, mfuser_public_key) as strings — the
         keys returned by the first call, shared by every node.
@@ -827,7 +838,7 @@ class MFPortal(MFLib):
 
         print(f"Setting up mfuser account on {first_node.get_name()} (generating key pair)...")
         mfuser_private_key, mfuser_public_key = MFPortal.setup_mfuser_account(
-            first_node, slice_name
+            first_node, slice_name, slice_id=slice_obj.get_slice_id()
         )
 
         key_path = f"{slice_name}_mfuser.key"
