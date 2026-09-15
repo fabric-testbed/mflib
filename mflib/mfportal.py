@@ -1725,6 +1725,7 @@ class MFPortal(MFLib):
             '        f"sudo -u mfuser python3 {MF_REPO_DIR}/instrumentize/experiment_bootstrap/bootstrap_playbooks.py"',
             "    )",
             '    run("Create prometheus service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/prometheus/create.py")',
+            '    run("Create grafana manager service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/grafana_manager/create.py")',
             '    run("Create meas_node_server service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/meas_node_server/create.py")',
             '    print("[mflib] self-start complete")',
             "",
