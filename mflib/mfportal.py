@@ -1316,6 +1316,17 @@ class MFPortal(MFLib):
     # hosts.ini locally, before running bootstrap_playbooks.py.
     # ------------------------------------------------------------------
     @staticmethod
+    def _bracket_if_ipv6(addr):
+        """
+        Wraps `addr` in [] if it's IPv6 (i.e. contains ':') -- required for
+        any "host:port" string (Prometheus/node_exporter targets, etc.) to
+        parse correctly; "2602:fcfb:9:15::2:9100" is ambiguous, it needs to
+        be "[2602:fcfb:9:15::2]:9100". Leaves IPv4/hostname values (never
+        containing ':') unchanged.
+        """
+        return f"[{addr}]" if addr and ":" in addr else addr
+
+    @staticmethod
     def build_meas_node_hosts_ini(meas_node_name, ansible_host, management_ip_type=None, ansible_connection=None):
         """
         Returns ansible hosts.ini text containing only the meas node —
@@ -1327,12 +1338,13 @@ class MFPortal(MFLib):
         mfuser's SSH keys necessarily exist yet). Leave None for the
         normal SSH-based entry a client would use.
         """
+        bracketed_host = MFPortal._bracket_if_ipv6(ansible_host)
         host_fields = [
             meas_node_name,
-            f"ansible_host={ansible_host}",
+            f"ansible_host={bracketed_host}",
             f"hostname={meas_node_name}",
             "ansible_ssh_user=mfuser",
-            f"node_exporter_listen_ip={ansible_host}",
+            f"node_exporter_listen_ip={bracketed_host}",
         ]
         if ansible_connection:
             host_fields.append(f"ansible_connection={ansible_connection}")
@@ -1586,6 +1598,14 @@ class MFPortal(MFLib):
             '        return "127.0.0.1"',
             "",
             "",
+            "def bracket_if_ipv6(addr):",
+            "    # Wraps addr in [] if it's IPv6 (contains ':') -- required for any",
+            "    # host:port string (Prometheus/node_exporter targets) to parse",
+            "    # correctly. IPv4/hostname values (never containing ':') are",
+            "    # returned unchanged.",
+            '    return f"[{addr}]" if addr and ":" in addr else addr',
+            "",
+            "",
             "def load_registered_slice():",
             "    # Written by the client once the experiment slice is",
             "    # registered:",
@@ -1618,9 +1638,10 @@ class MFPortal(MFLib):
             '            ip_type = f"IPv{ipaddress.ip_address(ip_addr).version}"',
             "        except ValueError:",
             '            ip_type = ""',
+            "        bracketed_ip = bracket_if_ipv6(ip_addr)",
             "        lines.append(",
-            '            f"{name} ansible_host={ip_addr} hostname={name} "',
-            '            f"ansible_ssh_user=mfuser node_exporter_listen_ip={ip_addr} "',
+            '            f"{name} ansible_host={bracketed_ip} hostname={name} "',
+            '            f"ansible_ssh_user=mfuser node_exporter_listen_ip={bracketed_ip} "',
             "            f\"ansible_ssh_common_args='-o StrictHostKeyChecking=no' \"",
             '            f\'management_ip_type="{ip_type}" meas_network="{network}"\'',
             "        )",
@@ -1660,9 +1681,10 @@ class MFPortal(MFLib):
             "    # available. bootstrap_playbooks.py needs this file to exist",
             "    # before it runs.",
             "    ip_addr = discover_ip()",
+            "    bracketed_ip = bracket_if_ipv6(ip_addr)",
             "    host_line = (",
-            '        f"{MEAS_NODE_NAME} ansible_host={ip_addr} hostname={MEAS_NODE_NAME} "',
-            '        f"ansible_ssh_user=mfuser node_exporter_listen_ip={ip_addr} "',
+            '        f"{MEAS_NODE_NAME} ansible_host={bracketed_ip} hostname={MEAS_NODE_NAME} "',
+            '        f"ansible_ssh_user=mfuser node_exporter_listen_ip={bracketed_ip} "',
             '        f"ansible_connection=local"',
             "    )",
             "",

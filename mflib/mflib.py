@@ -647,12 +647,16 @@ class MFLib(Core):
                         # Force configure
                         this_node.config()
                         ip_addr = interface.get_ip_addr()
+                    # Bracket IPv6 literals -- "2602:...:9100" is ambiguous as
+                    # a host:port string, it needs to be "[2602:...]:9100"
+                    # (see slice_node_targets.yml.j2, which parses this).
+                    bracketed_ip = f"[{ip_addr}]" if ip_addr and ":" in str(ip_addr) else ip_addr
                     hosts.append(
                         f"{this_node.get_name()} "
-                        f"ansible_host={ip_addr} "
+                        f"ansible_host={bracketed_ip} "
                         f"hostname={this_node.get_name()} "
                         f"ansible_ssh_user={mfuser} "
-                        f"node_exporter_listen_ip={ip_addr} "
+                        f"node_exporter_listen_ip={bracketed_ip} "
                         f"ansible_ssh_common_args='-o StrictHostKeyChecking=no' "
                         f'management_ip_type="{this_node.validIPAddress(this_node.get_management_ip())}"'
                     )
