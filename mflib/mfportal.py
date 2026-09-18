@@ -661,6 +661,52 @@ class MFPortal(MFLib):
             print(f"Registration failed: {exc}")
             return {"error": str(exc)}
 
+    @staticmethod
+    def register_slice_with_portal(
+        slice_obj,
+        portal_url,
+        slice_name=None,
+        meas_network_name=None,
+        register_path="/api/slice/mini/register",
+    ):
+        """
+        One-call version of sample-code/RegisterSlice.ipynb's manual
+        sequence (setup_mfuser_accounts() -> collect_full_register_data()
+        -> POST to the portal): sets up the mfuser account on every node
+        in the slice (one key pair, reused across all of them -- see
+        setup_mfuser_accounts()), then collects and POSTs the portal's
+        registration payload.
+
+        Precondition: every node already has a FABNetv6 meas-net NIC
+        wired up (e.g. via add_meas_network()) -- this does not add one,
+        same as the notebook it replaces. collect_full_register_data()
+        silently omits any node without one rather than failing, so
+        registration still succeeds, just without meas-net info for
+        those nodes.
+
+        portal_url: the portal's base URL (e.g. "http://23.134.232.147").
+        register_path ("/api/slice/mini/register" by default -- the
+        endpoint the current notebook actually uses) is appended for you.
+
+        Returns (mfuser_private_key, mfuser_public_key, portal_response):
+        the key pair in case the caller wants to save/reuse it, and the
+        portal's parsed JSON response (or {"error": ...} on failure --
+        see minimal_portal_register()).
+        """
+        mfuser_private_key, mfuser_public_key = MFPortal.setup_mfuser_accounts(
+            slice_obj, slice_name=slice_name
+        )
+
+        data = MFPortal.collect_full_register_data(
+            slice_obj, mfuser_private_key, mfuser_public_key,
+            meas_network_name=meas_network_name,
+        )
+
+        register_url = portal_url.rstrip("/") + register_path
+        response = MFPortal.minimal_portal_register(data, register_url)
+
+        return mfuser_private_key, mfuser_public_key, response
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
