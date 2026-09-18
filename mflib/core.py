@@ -315,7 +315,7 @@ class Core:
     def __init__(
         self,
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="main",
+        mf_repo_branch="bootstrap-updating",
         logging_level=logging.DEBUG,
     ):
         """

@@ -216,7 +216,7 @@ class MFLib(Core):
         self,
         slice="",
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="main",
+        mf_repo_branch="bootstrap-updating",
         optimize_repos=False,
         node=None,
         node_api_url: Optional[str] = None,
@@ -228,7 +228,7 @@ class MFLib(Core):
         Args:
             slice (fablib.slice): Slice object already set with experiment topology.
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
-            mf_repo_branch (str, optional): git branch name to pull MeasurementFranework code from. Defaults to "main".
+            mf_repo_branch (str, optional): git branch name to pull MeasurementFranework code from. Defaults to "bootstrap-updating" -- main is not in active use for this project.
             node: Optional node-like object exposing execute/upload/download methods.
             node_api_url (str, optional): Base URL for the measurement node REST API.
             node_api_token (str, optional): Optional bearer token for the measurement node REST API.

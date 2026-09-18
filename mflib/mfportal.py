@@ -1397,7 +1397,7 @@ class MFPortal(MFLib):
     # Cell 13 — Install MeasurementFramework
     # ------------------------------------------------------------------
     @staticmethod
-    def clone_measurement_framework_repo(node, mf_repo_branch="main"):
+    def clone_measurement_framework_repo(node, mf_repo_branch="bootstrap-updating"):
         # TODO change to downloading a release tarball instead of cloning the repo
         cmd = (
             f"sudo -u mfuser git clone -q -b {mf_repo_branch} "
@@ -1482,7 +1482,7 @@ class MFPortal(MFLib):
     # on first boot, without a client driving it interactively.
     # ------------------------------------------------------------------
     @staticmethod
-    def meas_node_self_start(node, mf_repo_branch="main", registered_slice=None):
+    def meas_node_self_start(node, mf_repo_branch="bootstrap-updating", registered_slice=None):
         """
         Installs a systemd oneshot service on `node` that runs a small
         Python script to clone the MeasurementFramework repo, create the
