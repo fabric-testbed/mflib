@@ -671,18 +671,23 @@ class MFPortal(MFLib):
     ):
         """
         One-call version of sample-code/RegisterSlice.ipynb's manual
-        sequence (setup_mfuser_accounts() -> collect_full_register_data()
-        -> POST to the portal): sets up the mfuser account on every node
-        in the slice (one key pair, reused across all of them -- see
-        setup_mfuser_accounts()), then collects and POSTs the portal's
+        sequence (add_meas_network() -> setup_mfuser_accounts() ->
+        collect_full_register_data() -> POST to the portal): ensures every
+        node in the slice has a FABNetv6 meas-net NIC, sets up the mfuser
+        account on every node (one key pair, reused across all of them --
+        see setup_mfuser_accounts()), then collects and POSTs the portal's
         registration payload.
 
-        Precondition: every node already has a FABNetv6 meas-net NIC
-        wired up (e.g. via add_meas_network()) -- this does not add one,
-        same as the notebook it replaces. collect_full_register_data()
-        silently omits any node without one rather than failing, so
-        registration still succeeds, just without meas-net info for
-        those nodes.
+        The meas net is added here, in the CALLER's own fablib session
+        (real, node-authorized SSH access), rather than by the portal --
+        the portal only ever has an ephemeral key it generates itself for
+        an arbitrary user's slice, which is never added to any node's
+        authorized_keys, so it cannot perform the IP-assignment half of
+        add_meas_network()/get_meas_net() (assign_static_fabnet6_ip()
+        needs to `ip -6 addr show`/`ip addr add` on the node itself).
+        add_meas_network() is idempotent -- nodes that already have a
+        meas-net NIC are left alone -- so calling it here unconditionally
+        is safe whether or not the slice already has one.
 
         portal_url: the portal's base URL (e.g. "http://23.134.232.147").
         register_path ("/api/slice/mini/register" by default -- the
@@ -693,6 +698,8 @@ class MFPortal(MFLib):
         portal's parsed JSON response (or {"error": ...} on failure --
         see minimal_portal_register()).
         """
+        MFPortal.add_meas_network(slice_obj, meas_network_name=meas_network_name)
+
         mfuser_private_key, mfuser_public_key = MFPortal.setup_mfuser_accounts(
             slice_obj, slice_name=slice_name
         )
