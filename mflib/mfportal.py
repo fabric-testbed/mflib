@@ -276,6 +276,32 @@ class MFPortal(MFLib):
         stdout, _ = node.execute(f"ip -6 addr show {dev}")
         print(stdout)
 
+        # node.add_fabnet() (called by add_meas_network()) registers a route
+        # to the FABRIC-wide FABNetv6 supernet via this NIC's gateway in
+        # fablib's own metadata (Node.add_route()) -- but that's only ever
+        # pushed to the node's actual OS routing table by config_routes(),
+        # which runs as part of Slice.post_boot_config(). add_meas_network()
+        # deliberately calls slice_obj.submit(wait=False) to sidestep a
+        # ModifyError bug in post_boot_config()'s own nested resubmit (see
+        # add_meas_network()'s docstring) -- which also means config_routes()
+        # never runs for a NIC added this way, so the route is registered in
+        # fablib's local model but never actually applied on the node.
+        # Without it, this node has no way to route reply traffic back to a
+        # FABNetv6 peer at a different site (e.g. the meas node) -- same-site
+        # peers can appear to work by accident via direct subnet adjacency.
+        # A node whose meas-net NIC was present at initial slice submission
+        # gets this route for free (post_boot_config() runs normally on a
+        # not-yet-instantiated slice's first submit), so this only actually
+        # does anything for a NIC added via the modify path -- but it's
+        # idempotent (via `ip route replace`) and harmless to run either way.
+        fabnetv6_supernet = node.get_fablib_manager().FABNETV6_SUBNET
+        _route_check, _ = node.execute(f"ip -6 route show {fabnetv6_supernet}")
+        if str(gw_v6) not in _route_check:
+            node.execute(f"sudo ip -6 route replace {fabnetv6_supernet} via {gw_v6} dev {dev}")
+            print(f"Route to {fabnetv6_supernet} via {gw_v6} added.")
+        else:
+            print(f"Route to {fabnetv6_supernet} already present — skipping.")
+
         return {
             "node_ipv6": str(node_ipv6),
             "meas_net_subnet": str(subnet_v6),
