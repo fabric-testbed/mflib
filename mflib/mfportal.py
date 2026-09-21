@@ -744,6 +744,54 @@ class MFPortal(MFLib):
 
         return mfuser_private_key, mfuser_public_key, response
 
+    @staticmethod
+    def get_portal_login_link(portal_url, fablib_manager=None, login_path="/login", display_link=True):
+        """
+        Builds (and, in a notebook, displays) a clickable link that logs the
+        caller into `portal_url` using their CURRENT FABRIC id_token --
+        no copy/pasting a token into the portal's login page by hand.
+
+        fablib_manager: reuse an existing one (e.g. slice_obj.
+        get_fablib_manager()) if you have it handy; otherwise a fresh
+        FablibManager() is created, which reads the same local fablib
+        config (~/.fabric_token.json / FABRIC_TOKEN_LOCATION, etc.) any
+        other fablib call in this kernel already uses.
+
+        The token travels in the URL *fragment* (`#token=...`), not the
+        query string -- fragments are never sent to the server or appear in
+        server/proxy access logs, only read client-side by the portal's
+        login page's own JS. That's safer than a query param for a bearer
+        credential, but the resulting URL is still sensitive once clicked
+        (ends up in local browser history) -- treat/share it accordingly,
+        and expect it to stop working whenever the underlying token expires.
+
+        display_link=True (default): if running inside a Jupyter kernel,
+        renders a clickable HTML link via IPython.display instead of
+        calling webbrowser.open() -- webbrowser.open() would try to open a
+        browser on the notebook SERVER (e.g. a remote JupyterHub host), not
+        the user's own machine, which is almost never what you want here.
+        Falls back to printing the URL if IPython isn't available.
+
+        Always returns the URL string too, regardless of display_link.
+        """
+        from urllib.parse import quote
+
+        if fablib_manager is None:
+            from fabrictestbed_extensions.fablib.fablib import FablibManager
+            fablib_manager = FablibManager()
+
+        id_token = fablib_manager.get_manager().get_id_token()
+        url = f"{portal_url.rstrip('/')}{login_path}#token={quote(id_token, safe='')}"
+
+        if display_link:
+            try:
+                from IPython.display import display, HTML
+                display(HTML(f'<a href="{url}" target="_blank">Click here to log into {portal_url}</a>'))
+            except Exception:
+                print(f"Open this link to log in: {url}")
+
+        return url
+
     # ------------------------------------------------------------------
     # Cell 7 — Persistent FABNetv6 Routing
     # ------------------------------------------------------------------
