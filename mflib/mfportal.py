@@ -380,6 +380,7 @@ class MFPortal(MFLib):
             # So the wait is driven manually instead of through submit(),
             # to get resource-readiness waiting without ever routing
             # through wait_jupyter()/post_boot_config()'s nested resubmit.
+            print("Submitting slice modify adding meas nics")
             slice_obj.submit(wait=False)
             
             # timeout=600 (not fablib submit()'s own 1800s default): that
@@ -391,7 +392,9 @@ class MFPortal(MFLib):
             # error state), so a shorter timeout doesn't slow down the
             # normal successful path -- it only controls how long to wait
             # before giving up if the modify is genuinely stuck.
+            print("Waiting for modify")
             slice_obj.wait(timeout=600, interval=20)
+            print("Updating slice")
             slice_obj.update()
 
             # node.get_interfaces(refresh=True) is NOT a network call -- it
@@ -698,8 +701,9 @@ class MFPortal(MFLib):
         portal's parsed JSON response (or {"error": ...} on failure --
         see minimal_portal_register()).
         """
+        print("Starting add meas network")
         MFPortal.add_meas_network(slice_obj, meas_network_name=meas_network_name)
-
+        print("Meas network checked/added")
         mfuser_private_key, mfuser_public_key = MFPortal.setup_mfuser_accounts(
             slice_obj, slice_name=slice_name
         )
