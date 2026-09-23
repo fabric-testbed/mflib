@@ -55,6 +55,7 @@ class MFPortal(MFLib):
     MEAS_NODE_NAME = "meas-node"
     MEAS_NETWORK_NAME = "meas-net6"
     RT_V6 = 30
+    DEFAULT_PORTAL_URL = "https://mfportal.fabric-testbed.net"
 
     # ------------------------------------------------------------------
     # Cell "get_unique_slice_name" helper
@@ -346,13 +347,21 @@ class MFPortal(MFLib):
         the slice is (re)submitted — before that, the network has no real
         subnet/gateway from FABRIC yet, so assign_static_fabnet6_ip() would
         fail with net_obj.get_available_ips() returning None. This method
-        calls slice_obj.submit() after wiring up any new NICs, so both the
-        pre-submit case (initial slice build) and the already-submitted
-        case (retrofitting an existing slice) end with the new NIC(s)
-        actually provisioned before returning — assuming your fablib
-        version supports resubmitting an already-submitted slice to add
-        hardware; older versions may need slice_obj.modify()/modify_accept()
-        instead.
+        calls slice_obj.submit() after wiring up any new NICs.
+
+        WARNING -- the already-submitted/retrofit case (this method) is
+        confirmed UNRELIABLE: see notes/fabnetv6-modify-network-not-in-
+        topology.md. Modifying an already-submitted slice to add a new
+        FABNetv6 network service creates a real, healthy reservation
+        server-side, but its interfaces have been observed coming back
+        Closed (reclaimed) shortly after -- not a timing issue, confirmed
+        with retries up to 30+ minutes. If the new NIC(s) still aren't
+        visible after this method's own retry loop, it raises RuntimeError
+        rather than silently returning as if it worked. If you're building
+        a slice that hasn't been submitted yet, prefer
+        add_meas_network_presubmit() instead -- it wires the NIC in before
+        the first submit(), going through the orchestrator's create path
+        (confirmed reliable), not modify.
 
         If results_file is given, the list of newly-wired node names is
         also written there as JSON. Left as None (the default), nothing is
@@ -454,11 +463,31 @@ class MFPortal(MFLib):
                 slice_obj.update()
                 pending = _still_missing(pending)
                 attempt += 1
-            for node in pending:
-                site_network_name = MFPortal.meas_fabnet_name(meas_network_name, node.get_site())
-                print(
-                    f"{node.get_name()}: WARNING — FABNetv6 NIC on {site_network_name} "
-                    "still not visible after retries."
+            if pending:
+                # Matches a confirmed, unfixable-on-the-client orchestrator bug --
+                # see notes/fabnetv6-modify-network-not-in-topology.md for the full
+                # investigation. Short version: modifying an ALREADY-SUBMITTED slice
+                # to add a new FABNetv6 network service creates a real, healthy
+                # reservation server-side (confirmed via slice.get_error_messages()),
+                # but its interfaces come back Closed (reclaimed) shortly after --
+                # not a timing issue, ruled out with retries up to 30+ minutes in the
+                # field. No amount of retrying here can fix that, so this raises
+                # instead of silently continuing into mfuser setup/registration with
+                # an empty meas net -- that used to happen silently, surfacing only as
+                # meas_net_written: false deep in the portal's response.
+                pending_names = [node.get_name() for node in pending]
+                raise RuntimeError(
+                    f"add_meas_network(): FABNetv6 NIC(s) for {pending_names} still not "
+                    "visible after wiring + modify + retries. This is a known orchestrator "
+                    "bug when adding a new network service via modify to an "
+                    "already-submitted slice (see notes/fabnetv6-modify-network-not-in-"
+                    "topology.md) -- not a timing issue, so retrying longer will not help. "
+                    "The only confirmed workaround is add_meas_network_presubmit(), which "
+                    "wires the NIC onto the slice's topology BEFORE its first submit() "
+                    "(the orchestrator's create path, not modify) -- not usable on this "
+                    "slice since it's already submitted. Options: retry later (the bug may "
+                    "be intermittent), or rebuild the slice with the meas net wired in from "
+                    "the start via add_meas_network_presubmit()."
                 )
 
         newly_wired_names = [node.get_name() for node in newly_wired]
@@ -693,7 +722,7 @@ class MFPortal(MFLib):
     @staticmethod
     def register_slice_with_portal(
         slice_obj,
-        portal_url,
+        portal_url=None,
         slice_name=None,
         meas_network_name=None,
         register_path="/api/slice/mini/register",
@@ -719,14 +748,19 @@ class MFPortal(MFLib):
         is safe whether or not the slice already has one.
 
         portal_url: the portal's base URL (e.g. "http://23.134.232.147").
-        register_path ("/api/slice/mini/register" by default -- the
-        endpoint the current notebook actually uses) is appended for you.
+        Defaults to MFPortal.DEFAULT_PORTAL_URL ("https://mfportal.fabric-
+        testbed.net") when not given. register_path ("/api/slice/mini/
+        register" by default -- the endpoint the current notebook actually
+        uses) is appended for you.
 
-        Returns (mfuser_private_key, mfuser_public_key, portal_response):
-        the key pair in case the caller wants to save/reuse it, and the
-        portal's parsed JSON response (or {"error": ...} on failure --
-        see minimal_portal_register()).
+        Returns the portal's parsed JSON response (or {"error": ...} on
+        failure -- see minimal_portal_register()). The mfuser key pair
+        setup_mfuser_accounts() generates is submitted to the portal as
+        part of this call, but isn't returned here -- if a caller needs it
+        directly, call setup_mfuser_accounts()/setup_mfuser_account()
+        themselves instead of this one-call wrapper.
         """
+        portal_url = portal_url or MFPortal.DEFAULT_PORTAL_URL
         print("Starting add meas network")
         MFPortal.add_meas_network(slice_obj, meas_network_name=meas_network_name)
         print("Meas network checked/added")
@@ -740,16 +774,16 @@ class MFPortal(MFLib):
         )
 
         register_url = portal_url.rstrip("/") + register_path
-        response = MFPortal.minimal_portal_register(data, register_url)
-
-        return mfuser_private_key, mfuser_public_key, response
+        return MFPortal.minimal_portal_register(data, register_url)
 
     @staticmethod
-    def get_portal_login_link(portal_url, fablib_manager=None, login_path="/login", display_link=True):
+    def get_portal_login_link(portal_url=None, fablib_manager=None, login_path="/login", display_link=True):
         """
         Builds (and, in a notebook, displays) a clickable link that logs the
         caller into `portal_url` using their CURRENT FABRIC id_token --
         no copy/pasting a token into the portal's login page by hand.
+        `portal_url` defaults to MFPortal.DEFAULT_PORTAL_URL
+        ("https://mfportal.fabric-testbed.net") when not given.
 
         fablib_manager: reuse an existing one (e.g. slice_obj.
         get_fablib_manager()) if you have it handy; otherwise a fresh
@@ -776,6 +810,7 @@ class MFPortal(MFLib):
         """
         from urllib.parse import quote
 
+        portal_url = portal_url or MFPortal.DEFAULT_PORTAL_URL
         if fablib_manager is None:
             from fabrictestbed_extensions.fablib.fablib import FablibManager
             fablib_manager = FablibManager()
