@@ -1900,6 +1900,7 @@ class MFPortal(MFLib):
             '    run("Create prometheus service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/prometheus/create.py")',
             '    run("Create grafana manager service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/grafana_manager/create.py")',
             '    run("Create meas_node_server service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/meas_node_server/create.py")',
+            '    run("Create mflib_mcp service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/mflib_mcp/create.py")',
             '    print("[mflib] self-start complete")',
             "",
             "",
