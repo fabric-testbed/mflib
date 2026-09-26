@@ -325,7 +325,9 @@ below does as a local systemd service.
   anywhere in mflib or claude-mflib-portal. Fully superseded by
   `meas_node_server` (now a MeasurementFramework `user_service`, installed
   via `meas_node_self_start()`'s own `create.py` call) — no separate mflib
-  clone + pip install needed on the node at all anymore.
+  clone + pip install needed on the node at all anymore. `mflib-node/`
+  itself (the package this installed) is now flagged for removal too — see
+  its own README.
 
 ## Meas node self-start (systemd, runs on the node itself)
 
