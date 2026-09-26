@@ -36,7 +36,7 @@ class Core:
     It is not intended to be used by itself, but rather, it is the base object for creating Measurement Framework Library objects.
     """
 
-    core_class_version = "1.0.40"
+    core_class_version = "1.0.41"
 
     """
     An updatable version for debugging purposes to make sure the correct version of this file is being used. Anyone can update this value as they see fit.
@@ -315,7 +315,7 @@ class Core:
     def __init__(
         self,
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="bootstrap-updating",
+        mf_repo_branch="main",
         logging_level=logging.DEBUG,
     ):
         """
@@ -323,7 +323,7 @@ class Core:
 
         Args:
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
-            mf_repo_branch (str, optional): git branch name to pull MeasurementFranework code from. Defaults to "main".
+            mf_repo_branch (str, optional): git branch name to pull MeasurementFramework code from. Defaults to "main" -- the stable, infrequently-updated branch used for manual/notebook-driven instrumentation. MFPortal's own automated meas-node creation flow pins a separate tagged release instead (see MFPortal.meas_node_self_start()'s mf_repo_branch default), not this constructor default.
         """
         # super().__init__()
 

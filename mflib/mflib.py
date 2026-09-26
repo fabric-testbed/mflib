@@ -48,7 +48,7 @@ class MFLib(Core):
     """
     MFLib allows for adding and controlling the MeasurementFramework in a Fabric experiementers slice.
     """
-    mflib_class_version = "1.0.42"
+    mflib_class_version = "1.0.43"
     __version__ = mflib_class_version
     __VERSION__ = mflib_class_version
 
@@ -216,7 +216,7 @@ class MFLib(Core):
         self,
         slice="",
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="bootstrap-updating",
+        mf_repo_branch="main",
         optimize_repos=False,
         node=None,
         node_api_url: Optional[str] = None,
@@ -228,7 +228,7 @@ class MFLib(Core):
         Args:
             slice (fablib.slice): Slice object already set with experiment topology.
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
-            mf_repo_branch (str, optional): git branch name to pull MeasurementFranework code from. Defaults to "bootstrap-updating" -- main is not in active use for this project.
+            mf_repo_branch (str, optional): git branch name to pull MeasurementFramework code from. Defaults to "main" -- the stable, infrequently-updated branch used for manual/notebook-driven instrumentation. MFPortal's own automated meas-node creation flow pins a separate tagged release instead (see MFPortal.meas_node_self_start()'s mf_repo_branch default) rather than using this constructor default.
             node: Optional node-like object exposing execute/upload/download methods.
             node_api_url (str, optional): Base URL for the measurement node REST API.
             node_api_token (str, optional): Optional bearer token for the measurement node REST API.

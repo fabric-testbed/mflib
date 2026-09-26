@@ -26,10 +26,12 @@ Split out of samples/create-meas-node.ipynb. Each method below corresponds
 to one cell (or a small group of cells) from that notebook, turned into a
 reusable MFPortal staticmethod instead of notebook-global procedural code.
 
-The earlier version of this class (methods moved wholesale out of mflib.py,
-before this notebook-derived rewrite) is kept at mflib/first-draft-mfportal.py
-for reference — several of its methods (register_meas_node_to_portal in
-particular) had undefined-name bugs that this version fixes.
+An earlier draft of this class (methods moved wholesale out of mflib.py,
+before this notebook-derived rewrite) existed at mflib/first-draft-mfportal.py
+-- several of its methods (register_meas_node_to_portal in particular) had
+undefined-name bugs that this version fixes. Deleted 2026-09 (see git history
+if it's ever needed again); this docstring's comparison to it is now purely
+historical.
 """
 
 import base64
@@ -52,10 +54,31 @@ class MFPortal(MFLib):
     order as the notebook's cells.
     """
 
+    # An updatable version for debugging purposes to make sure the correct
+    # version of this file is being used -- same pattern/purpose as
+    # Core.core_class_version and MFLib.mflib_class_version. Should always
+    # be increasing. First introduced 2026-09; bump it whenever mfportal.py
+    # changes in a way worth being able to tell apart from a stale install
+    # (e.g. the register_slice_with_portal() return-signature change that
+    # caused a confusing TypeError against an old cached install).
+    mfportal_class_version = "1.0.0"
+    __version__ = mfportal_class_version
+    __VERSION__ = mfportal_class_version
+
     MEAS_NODE_NAME = "meas-node"
     MEAS_NETWORK_NAME = "meas-net6"
     RT_V6 = 30
     DEFAULT_PORTAL_URL = "https://mfportal.fabric-testbed.net"
+    # MeasurementFramework ref the portal's own automated meas-node creation
+    # flow clones -- a frozen tag, not a moving branch, so a future
+    # bootstrap-updating commit can't change what self-start delivers until
+    # this is deliberately bumped to a new tag. Update alongside cutting a
+    # new tag from bootstrap-updating (see git tag -a in the repo). Unlike
+    # this, Core/MFLib's own mf_repo_branch constructor default ("main") is
+    # for manual/notebook-driven instrumentation of an experimenter's own
+    # slice -- deliberately separate so a portal-side tag bump never affects
+    # that path, and vice versa.
+    MF_REPO_TAG = "v1.0.0-mfportal"
 
     # ------------------------------------------------------------------
     # Cell "get_unique_slice_name" helper
@@ -583,29 +606,34 @@ class MFPortal(MFLib):
 
         return results
 
-    @staticmethod
-    def collect_slice_register_info(slice_obj, meas_network_name=None):
-        """
-        Gathers slice-level registration info without assuming a dedicated
-        meas node exists -- unlike collect_register_meas_node_args(), this
-        never looks up any specific node by name, so there's no meas-node
-        lookup to fail. Per-node FABNetv6 info comes from get_meas_net(),
-        which already skips any node without a wired-up NIC instead of
-        raising.
-
-        Returns a dict: slice_name, slice_id, lease_start, lease_end,
-        meas_net (get_meas_net()'s {node_name: assign_static_fabnet6_ip()
-        result} dict).
-        """
-        meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
-
-        return {
-            "slice_name": slice_obj.get_name(),
-            "slice_id": slice_obj.get_slice_id(),
-            "lease_start": slice_obj.get_lease_start(),
-            "lease_end": slice_obj.get_lease_end(),
-            "meas_net": MFPortal.get_meas_net(slice_obj, meas_network_name=meas_network_name),
-        }
+    # --- DISABLED (flagged unused, not deleted) -- zero real call sites
+    # anywhere in mflib or claude-mflib-portal (confirmed 2026-09; the only
+    # other match is collect_full_register_data()'s own docstring comparing
+    # itself to this one, not an actual call). ---
+    # @staticmethod
+    # def collect_slice_register_info(slice_obj, meas_network_name=None):
+    #     """
+    #     Gathers slice-level registration info without assuming a dedicated
+    #     meas node exists -- unlike collect_register_meas_node_args(), this
+    #     never looks up any specific node by name, so there's no meas-node
+    #     lookup to fail. Per-node FABNetv6 info comes from get_meas_net(),
+    #     which already skips any node without a wired-up NIC instead of
+    #     raising.
+    #
+    #     Returns a dict: slice_name, slice_id, lease_start, lease_end,
+    #     meas_net (get_meas_net()'s {node_name: assign_static_fabnet6_ip()
+    #     result} dict).
+    #     """
+    #     meas_network_name = meas_network_name or MFPortal.MEAS_NETWORK_NAME
+    #
+    #     return {
+    #         "slice_name": slice_obj.get_name(),
+    #         "slice_id": slice_obj.get_slice_id(),
+    #         "lease_start": slice_obj.get_lease_start(),
+    #         "lease_end": slice_obj.get_lease_end(),
+    #         "meas_net": MFPortal.get_meas_net(slice_obj, meas_network_name=meas_network_name),
+    #     }
+    # --- end disabled method ---
 
     @staticmethod
     def minimal_register_data(slice_obj, mfuser_private_key, mfuser_public_key):
@@ -1021,71 +1049,81 @@ class MFPortal(MFLib):
     # ------------------------------------------------------------------
     # Cell 9 — Deploy FastAPI Info/Registration Server
     # ------------------------------------------------------------------
-    @staticmethod
-    def deploy_info_server(node, node_ipv6, server_dir=None):
-        """
-        Uploads the FastAPI server from `server_dir` (defaults to
-        <repo_root>/meas-node-server) to /etc/mflib/server/ on the node,
-        installs pip dependencies, and starts the systemd service.
-        """
-        server_dir = Path(server_dir) if server_dir else Path("meas-node-server")
-
-        if not server_dir.exists():
-            raise FileNotFoundError(
-                f"Server source not found at {server_dir.resolve()}. "
-                "Pass server_dir explicitly."
-            )
-        print(f"Server source: {server_dir.resolve()}")
-
-        node.execute("sudo mkdir -p /etc/mflib/server/routers")
-        node.execute("sudo chown -R mfuser:mfuser /etc/mflib/server")
-
-        top_level_files = ["main.py", "schemas.py", "storage.py", "requirements.txt"]
-        for fname in top_level_files:
-            src = server_dir / fname
-            node.upload_file(str(src), f"/tmp/mfserver_{fname}")
-            node.execute(f"sudo cp /tmp/mfserver_{fname} /etc/mflib/server/{fname}")
-            print(f"  uploaded {fname}")
-
-        router_files = ["__init__.py", "info.py", "register.py", "mflib_ops.py"]
-        for fname in router_files:
-            src = server_dir / "routers" / fname
-            if not src.exists():
-                print(f"  skipping routers/{fname} (not found)")
-                continue
-            node.upload_file(str(src), f"/tmp/mfrouter_{fname}")
-            node.execute(f"sudo cp /tmp/mfrouter_{fname} /etc/mflib/server/routers/{fname}")
-            print(f"  uploaded routers/{fname}")
-
-        print("\nInstalling pip dependencies...")
-        stdout, stderr = node.execute(
-            "sudo pip3 install -q -r /etc/mflib/server/requirements.txt"
-        )
-        if stdout:
-            print(stdout)
-        if stderr and "WARNING" not in stderr:
-            print("pip stderr:", stderr[:400])
-
-        node.upload_file(
-            str(server_dir / "mflib-info-server.service"),
-            "/tmp/mflib-info-server.service",
-        )
-        stdout, _ = node.execute(
-            "sudo cp /tmp/mflib-info-server.service /etc/systemd/system/mflib-info-server.service && "
-            "sudo systemctl daemon-reload && "
-            "sudo systemctl enable mflib-info-server.service && "
-            "sudo systemctl restart mflib-info-server.service"
-        )
-        print(stdout)
-
-        time.sleep(3)
-        stdout, _ = node.execute(
-            "sudo systemctl is-active mflib-info-server.service && "
-            'curl -sf http://[::1]:5000/status || echo "WARNING: /status not yet responding"'
-        )
-        print(stdout)
-        print(f"\nFastAPI server started — http://[{node_ipv6}]:5000/status")
-        return stdout
+    # --- DISABLED (flagged unused, not deleted) -- zero call sites anywhere in
+    # mflib or claude-mflib-portal (confirmed 2026-09). Also confirmed broken:
+    # PORTAL_REGISTRATION_OPTIONS.md documents that the `./meas-node-server`
+    # directory (routers, main.py, etc.) this references doesn't exist anywhere
+    # in the repo, so `server_dir.exists()` would always raise FileNotFoundError
+    # if this were ever called. Fully superseded by MeasurementFramework's
+    # `meas_node_server` user_service (installed via meas_node_self_start()),
+    # which ships and manages the same status/info server without depending on
+    # this path at all. See mflib/PORTAL_REGISTRATION_OPTIONS.md. ---
+    # @staticmethod
+    # def deploy_info_server(node, node_ipv6, server_dir=None):
+    #     """
+    #     Uploads the FastAPI server from `server_dir` (defaults to
+    #     <repo_root>/meas-node-server) to /etc/mflib/server/ on the node,
+    #     installs pip dependencies, and starts the systemd service.
+    #     """
+    #     server_dir = Path(server_dir) if server_dir else Path("meas-node-server")
+    #
+    #     if not server_dir.exists():
+    #         raise FileNotFoundError(
+    #             f"Server source not found at {server_dir.resolve()}. "
+    #             "Pass server_dir explicitly."
+    #         )
+    #     print(f"Server source: {server_dir.resolve()}")
+    #
+    #     node.execute("sudo mkdir -p /etc/mflib/server/routers")
+    #     node.execute("sudo chown -R mfuser:mfuser /etc/mflib/server")
+    #
+    #     top_level_files = ["main.py", "schemas.py", "storage.py", "requirements.txt"]
+    #     for fname in top_level_files:
+    #         src = server_dir / fname
+    #         node.upload_file(str(src), f"/tmp/mfserver_{fname}")
+    #         node.execute(f"sudo cp /tmp/mfserver_{fname} /etc/mflib/server/{fname}")
+    #         print(f"  uploaded {fname}")
+    #
+    #     router_files = ["__init__.py", "info.py", "register.py", "mflib_ops.py"]
+    #     for fname in router_files:
+    #         src = server_dir / "routers" / fname
+    #         if not src.exists():
+    #             print(f"  skipping routers/{fname} (not found)")
+    #             continue
+    #         node.upload_file(str(src), f"/tmp/mfrouter_{fname}")
+    #         node.execute(f"sudo cp /tmp/mfrouter_{fname} /etc/mflib/server/routers/{fname}")
+    #         print(f"  uploaded routers/{fname}")
+    #
+    #     print("\nInstalling pip dependencies...")
+    #     stdout, stderr = node.execute(
+    #         "sudo pip3 install -q -r /etc/mflib/server/requirements.txt"
+    #     )
+    #     if stdout:
+    #         print(stdout)
+    #     if stderr and "WARNING" not in stderr:
+    #         print("pip stderr:", stderr[:400])
+    #
+    #     node.upload_file(
+    #         str(server_dir / "mflib-info-server.service"),
+    #         "/tmp/mflib-info-server.service",
+    #     )
+    #     stdout, _ = node.execute(
+    #         "sudo cp /tmp/mflib-info-server.service /etc/systemd/system/mflib-info-server.service && "
+    #         "sudo systemctl daemon-reload && "
+    #         "sudo systemctl enable mflib-info-server.service && "
+    #         "sudo systemctl restart mflib-info-server.service"
+    #     )
+    #     print(stdout)
+    #
+    #     time.sleep(3)
+    #     stdout, _ = node.execute(
+    #         "sudo systemctl is-active mflib-info-server.service && "
+    #         'curl -sf http://[::1]:5000/status || echo "WARNING: /status not yet responding"'
+    #     )
+    #     print(stdout)
+    #     print(f"\nFastAPI server started — http://[{node_ipv6}]:5000/status")
+    #     return stdout
+    # --- end disabled method ---
 
     # ------------------------------------------------------------------
     # Cell 10 — Write Slice Info File
@@ -1163,23 +1201,29 @@ class MFPortal(MFLib):
         return local_info
 
 
-    @staticmethod
-    def setup_initial_slice_json(slice_obj, meas_node_name=MEAS_NODE_NAME, meas_network_name=MEAS_NETWORK_NAME):
-        """
-        One-call convenience wrapper for writing the initial
-        /etc/mflib/portal_registration.json right after slice setup, before
-        portal registration has happened (portal_registration is left None
-        -- register_meas_node() plus a second write_slice_info() call fill
-        that in later).
-
-        Gathers write_slice_info()'s arguments via
-        collect_write_slice_info_args() so the only required argument here
-        is slice_obj. Returns the local_info dict that was written.
-        """
-        args = MFPortal.collect_write_slice_info_args(
-            slice_obj, meas_node_name=meas_node_name, meas_network_name=meas_network_name
-        )
-        return MFPortal.write_slice_info(slice_obj, **args)
+    # --- DISABLED (flagged unused, not deleted) -- zero call sites anywhere in
+    # mflib or claude-mflib-portal (confirmed 2026-09). A convenience wrapper
+    # around collect_write_slice_info_args()+write_slice_info() that nothing
+    # ever ended up calling -- both of those are used directly instead
+    # wherever this would apply. ---
+    # @staticmethod
+    # def setup_initial_slice_json(slice_obj, meas_node_name=MEAS_NODE_NAME, meas_network_name=MEAS_NETWORK_NAME):
+    #     """
+    #     One-call convenience wrapper for writing the initial
+    #     /etc/mflib/portal_registration.json right after slice setup, before
+    #     portal registration has happened (portal_registration is left None
+    #     -- register_meas_node() plus a second write_slice_info() call fill
+    #     that in later).
+    #
+    #     Gathers write_slice_info()'s arguments via
+    #     collect_write_slice_info_args() so the only required argument here
+    #     is slice_obj. Returns the local_info dict that was written.
+    #     """
+    #     args = MFPortal.collect_write_slice_info_args(
+    #         slice_obj, meas_node_name=meas_node_name, meas_network_name=meas_network_name
+    #     )
+    #     return MFPortal.write_slice_info(slice_obj, **args)
+    # --- end disabled method ---
 
     # ------------------------------------------------------------------
     # Register the experiment slice's nodes (+ mfuser key) on a meas node
@@ -1529,42 +1573,50 @@ class MFPortal(MFLib):
             "Experiment_Nodes",
         ]) + "\n"
 
-    @staticmethod
-    def create_meas_node_hosts_ini(node, meas_node_name=None, remote_path="/home/mfuser/services/common/hosts.ini"):
-        """
-        Builds a meas-node-only hosts.ini (see build_meas_node_hosts_ini)
-        and installs it on `node` at remote_path. Client-side counterpart
-        to the inline version meas_node_self_start() generates for itself.
-        """
-        meas_node_name = meas_node_name or MFPortal.MEAS_NODE_NAME
-        ip_addr = node.get_management_ip()
-        management_ip_type = node.validIPAddress(ip_addr) if ip_addr else None
-
-        hosts_ini = MFPortal.build_meas_node_hosts_ini(
-            meas_node_name, ip_addr, management_ip_type=management_ip_type
-        )
-
-        with open("/tmp/hosts.ini", "w") as f:
-            f.write(hosts_ini)
-        node.upload_file("/tmp/hosts.ini", "/tmp/hosts.ini")
-
-        stdout, stderr = node.execute(
-            "sudo mkdir -p /home/mfuser/services/common && "
-            f"sudo mv /tmp/hosts.ini {remote_path} && "
-            "sudo chown -R mfuser:mfuser /home/mfuser/services"
-        )
-        if stdout:
-            print(f"STDOUT: {stdout}")
-        if stderr:
-            print(f"STDERR: {stderr}")
-        return hosts_ini
+    # --- DISABLED (flagged unused, not deleted) -- zero call sites anywhere in
+    # mflib or claude-mflib-portal (confirmed 2026-09). The node builds its own
+    # hosts.ini locally instead (meas_node_self_start()'s generated script
+    # inlines the same logic as build_meas_node_hosts_ini() -- see that
+    # function's own docstring), so this client-driven, over-SSH counterpart
+    # was never actually wired up to anything. ---
+    # @staticmethod
+    # def create_meas_node_hosts_ini(node, meas_node_name=None, remote_path="/home/mfuser/services/common/hosts.ini"):
+    #     """
+    #     Builds a meas-node-only hosts.ini (see build_meas_node_hosts_ini)
+    #     and installs it on `node` at remote_path. Client-side counterpart
+    #     to the inline version meas_node_self_start() generates for itself.
+    #     """
+    #     meas_node_name = meas_node_name or MFPortal.MEAS_NODE_NAME
+    #     ip_addr = node.get_management_ip()
+    #     management_ip_type = node.validIPAddress(ip_addr) if ip_addr else None
+    #
+    #     hosts_ini = MFPortal.build_meas_node_hosts_ini(
+    #         meas_node_name, ip_addr, management_ip_type=management_ip_type
+    #     )
+    #
+    #     with open("/tmp/hosts.ini", "w") as f:
+    #         f.write(hosts_ini)
+    #     node.upload_file("/tmp/hosts.ini", "/tmp/hosts.ini")
+    #
+    #     stdout, stderr = node.execute(
+    #         "sudo mkdir -p /home/mfuser/services/common && "
+    #         f"sudo mv /tmp/hosts.ini {remote_path} && "
+    #         "sudo chown -R mfuser:mfuser /home/mfuser/services"
+    #     )
+    #     if stdout:
+    #         print(f"STDOUT: {stdout}")
+    #     if stderr:
+    #         print(f"STDERR: {stderr}")
+    #     return hosts_ini
+    # --- end disabled method ---
 
     # ------------------------------------------------------------------
     # Cell 13 — Install MeasurementFramework
     # ------------------------------------------------------------------
     @staticmethod
-    def clone_measurement_framework_repo(node, mf_repo_branch="bootstrap-updating"):
+    def clone_measurement_framework_repo(node, mf_repo_branch=None):
         # TODO change to downloading a release tarball instead of cloning the repo
+        mf_repo_branch = mf_repo_branch or MFPortal.MF_REPO_TAG
         cmd = (
             f"sudo -u mfuser git clone -q -b {mf_repo_branch} "
             f"https://github.com/fabric-testbed/MeasurementFramework.git /home/mfuser/mf_git"
@@ -1617,24 +1669,33 @@ class MFPortal(MFLib):
         print("Bootstrap ansible scripts done")
         return stdout, stderr
 
-    @staticmethod
-    def clone_mflib_and_install_node_server(node, mflib_repo_branch="node"):
-        cmd = (
-            f"sudo -u mfuser git clone -q -b {mflib_repo_branch} "
-            f"https://github.com/fabric-testbed/mflib.git /home/mfuser/mflib;"
-            f"cd /home/mfuser/mflib;"
-            f"sudo -u mfuser pip install -e mflib-node;"
-        )
-        stdout, stderr = node.execute(cmd, quiet=True)
-
-        if stdout:
-            print(f"STDOUT: {stdout}")
-        if stderr:
-            if "already exists and is not an empty directory" not in stderr:
-                print("Clone Directory already exist. Cloning MFLIB Repository from github.com Failed.")
-            else:
-                print(f"STDERR: {stderr}")
-        return stdout, stderr
+    # --- DISABLED (flagged unused, not deleted) -- zero call sites anywhere in
+    # mflib or claude-mflib-portal (confirmed 2026-09). This was the old way of
+    # getting a node status server onto the meas node -- clone mflib itself and
+    # `pip install -e mflib-node`. Fully superseded once that server was ported
+    # into MeasurementFramework as the `meas_node_server` user_service (see its
+    # own server.py header comment), installed via meas_node_self_start()
+    # instead -- no separate mflib clone + pip install needed on the node at
+    # all anymore. ---
+    # @staticmethod
+    # def clone_mflib_and_install_node_server(node, mflib_repo_branch="node"):
+    #     cmd = (
+    #         f"sudo -u mfuser git clone -q -b {mflib_repo_branch} "
+    #         f"https://github.com/fabric-testbed/mflib.git /home/mfuser/mflib;"
+    #         f"cd /home/mfuser/mflib;"
+    #         f"sudo -u mfuser pip install -e mflib-node;"
+    #     )
+    #     stdout, stderr = node.execute(cmd, quiet=True)
+    #
+    #     if stdout:
+    #         print(f"STDOUT: {stdout}")
+    #     if stderr:
+    #         if "already exists and is not an empty directory" not in stderr:
+    #             print("Clone Directory already exist. Cloning MFLIB Repository from github.com Failed.")
+    #         else:
+    #             print(f"STDERR: {stderr}")
+    #     return stdout, stderr
+    # --- end disabled method ---
 
     # ------------------------------------------------------------------
     # Meas node self-start
@@ -1648,7 +1709,7 @@ class MFPortal(MFLib):
     # on first boot, without a client driving it interactively.
     # ------------------------------------------------------------------
     @staticmethod
-    def meas_node_self_start(node, mf_repo_branch="bootstrap-updating", registered_slice=None):
+    def meas_node_self_start(node, mf_repo_branch=None, registered_slice=None):
         """
         Installs a systemd oneshot service on `node` that runs a small
         Python script to clone the MeasurementFramework repo, create the
@@ -1682,6 +1743,7 @@ class MFPortal(MFLib):
         unchanged (e.g. because it was already written by a prior call, or
         isn't known yet).
         """
+        mf_repo_branch = mf_repo_branch or MFPortal.MF_REPO_TAG
         meas_node_name = MFPortal.MEAS_NODE_NAME
 
         if registered_slice is not None:
@@ -1951,39 +2013,47 @@ class MFPortal(MFLib):
     # ------------------------------------------------------------------
     # Cell 14 — Summary
     # ------------------------------------------------------------------
-    @staticmethod
-    def print_summary(
-        slice_name,
-        slice_id,
-        node_ipv6,
-        meas_net_subnet,
-        gw_v6,
-        node_mgmt_ip,
-        node_ssh_cmd,
-        mfuser_key_filename,
-        portal_registration=None,
-        portal_public_url=None,
-    ):
-        sep = "=" * 62
-        print(sep)
-        print(f"  Meas Node Ready — {slice_name}")
-        print(sep)
-        print(f"  Slice ID      : {slice_id}")
-        print(f"  FABNetv6 IP   : {node_ipv6}")
-        print(f"  Subnet        : {meas_net_subnet}")
-        print(f"  Gateway       : {gw_v6}")
-        print(f"  Mgmt IP       : {node_mgmt_ip}")
-        print(f"  SSH           : {node_ssh_cmd}")
-        print(f"  mfuser key    : {mfuser_key_filename}")
-        print("-" * 62)
-        print(f"  Info server   : http://[{node_ipv6}]:5000/status")
-        if portal_registration:
-            print("  Portal        : registered")
-            print(f"  Portal info   : {portal_public_url}/api/meas-node/{slice_id}/info")
-            slug = re.sub(r"[^a-z0-9]+", "-", slice_name.lower()).strip("-") + "-" + slice_id[:5]
-            print(f"  Proxy URL     : http://{slug}.<PORTAL_DOMAIN>/status  (set PORTAL_DOMAIN in docker-compose)")
-        else:
-            print("  Portal        : not registered")
-        print(sep)
+    # --- DISABLED (flagged unused, not deleted) -- zero call sites anywhere in
+    # mflib or claude-mflib-portal (confirmed 2026-09). Cosmetic notebook
+    # output only (no side effects), from before the portal's own UI took over
+    # showing this information -- its "Proxy URL" line is also stale, still
+    # referencing the old {slug}.{PORTAL_DOMAIN} wildcard-subdomain scheme the
+    # portal replaced with per-node ports (see docs/request-flow.md in
+    # claude-mflib-portal). ---
+    # @staticmethod
+    # def print_summary(
+    #     slice_name,
+    #     slice_id,
+    #     node_ipv6,
+    #     meas_net_subnet,
+    #     gw_v6,
+    #     node_mgmt_ip,
+    #     node_ssh_cmd,
+    #     mfuser_key_filename,
+    #     portal_registration=None,
+    #     portal_public_url=None,
+    # ):
+    #     sep = "=" * 62
+    #     print(sep)
+    #     print(f"  Meas Node Ready — {slice_name}")
+    #     print(sep)
+    #     print(f"  Slice ID      : {slice_id}")
+    #     print(f"  FABNetv6 IP   : {node_ipv6}")
+    #     print(f"  Subnet        : {meas_net_subnet}")
+    #     print(f"  Gateway       : {gw_v6}")
+    #     print(f"  Mgmt IP       : {node_mgmt_ip}")
+    #     print(f"  SSH           : {node_ssh_cmd}")
+    #     print(f"  mfuser key    : {mfuser_key_filename}")
+    #     print("-" * 62)
+    #     print(f"  Info server   : http://[{node_ipv6}]:5000/status")
+    #     if portal_registration:
+    #         print("  Portal        : registered")
+    #         print(f"  Portal info   : {portal_public_url}/api/meas-node/{slice_id}/info")
+    #         slug = re.sub(r"[^a-z0-9]+", "-", slice_name.lower()).strip("-") + "-" + slice_id[:5]
+    #         print(f"  Proxy URL     : http://{slug}.<PORTAL_DOMAIN>/status  (set PORTAL_DOMAIN in docker-compose)")
+    #     else:
+    #         print("  Portal        : not registered")
+    #     print(sep)
+    # --- end disabled method ---
 
 
