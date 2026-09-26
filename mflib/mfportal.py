@@ -1146,7 +1146,8 @@ class MFPortal(MFLib):
         cells together by hand.
 
         Returns a dict with keys node, node_mgmt_ip, node_ipv6,
-        meas_net_subnet, gw_v6 -- pass it straight through:
+        meas_net_subnet, gw_v6 -- pass it straight through::
+
             args = MFPortal.collect_write_slice_info_args(slice_obj)
             MFPortal.write_slice_info(slice_obj, **args)
         """
@@ -1420,7 +1421,8 @@ class MFPortal(MFLib):
         if the meas node can't be found or has no FABNetv6 NIC, so callers
         can still get a (partial) dict back rather than an exception.
 
-        Returns a dict ready to pass straight through:
+        Returns a dict ready to pass straight through::
+
             args = MFPortal.collect_register_meas_node_args(
                 slice_obj, mfuser_public_key, portal_url=portal_url
             )
