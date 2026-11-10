@@ -20,6 +20,8 @@ The experiment interfaces must already have their IP addresses when this is call
 if they change later, run the service's update.py with the new topology.
 """
 
+import ipaddress
+
 DEFAULT_MEAS_NODE_NAME = "meas-node"
 # networks that belong to MF itself, not to the experiment
 DEFAULT_EXCLUDE_NETWORK_PREFIXES = ("l3_meas_net", "meas-net", "meas_net")
