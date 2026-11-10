@@ -26,9 +26,19 @@ DEFAULT_EXCLUDE_NETWORK_PREFIXES = ("l3_meas_net", "meas-net", "meas_net")
 
 
 def _ip(iface):
+    """The interface's address, or None/ fablib's get_ip_addr() returns the IPv6
+    link-local(fe80::) address for an interface that has no address configured yet;
+    that's not routeable, so it's treaded as "no address."""
     try:
         ip = iface.get_ip_addr()
     except Exception:
+        return None
+    if not ip:
+        return None
+    try:
+        if ipaddress.ip_address(str(ip)).is_link_local:
+            return None
+    except ValueError:
         return None
     return str(ip) if ip else None
 

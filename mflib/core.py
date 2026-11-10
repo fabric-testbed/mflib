@@ -479,8 +479,9 @@ class Core:
         :rtype: List
         """
         service_list = []
+        # sudo: on Ubuntu 24 meas nodes /home/mfuser is not readable by the login user
         stdout, stderr = self.meas_node.execute(
-            f"ls {self.services_directory}", quiet=True
+            f"sudo ls {self.services_directory}", quiet=True
         )
         for item in stdout.split("\n"):
             if item != "common" and item != "":
