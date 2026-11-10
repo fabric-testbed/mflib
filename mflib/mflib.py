@@ -609,6 +609,24 @@ class MFLib(Core):
                     print(msg)
                     self.mflib_logger.exception(msg)
 
+            elif service == "route_flow":
+                # route_flow needs the experiment topology, which only the client
+                # (with the slice object) can collect; pass it as the service data.
+                from mflib import route_flow
+                msg = f"   Setting up route_flow..."
+                print(msg)
+                self.mflib_logger.debug(msg)
+                topology = route_flow.collect_experiment_topology(
+                    self.slice, meas_node_name=self.measurement_node_name
+                )
+                service_data = self.create("route_flow", data={"experiment_topology": topology})
+                if not service_data["success"]:
+                    print(service_data)
+                self.mflib_logger.debug(service_data)
+                msg = f"   Setting up route_flow done."
+                print(msg)
+                self.mflib_logger.debug(msg)
+                all_data[service] = service_data
             elif service:
                 msg = f"   Setting up {service}..."
                 print(msg)

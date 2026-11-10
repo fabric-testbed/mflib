@@ -46,6 +46,7 @@ import paramiko
 import requests as _req
 
 from mflib.mflib import MFLib
+from mflib import route_flow
 
 
 class MFPortal(MFLib):
@@ -655,7 +656,8 @@ class MFPortal(MFLib):
         }
 
     @staticmethod
-    def collect_full_register_data(slice_obj, mfuser_private_key, mfuser_public_key, meas_network_name=None):
+    def collect_full_register_data(slice_obj, mfuser_private_key, mfuser_public_key, meas_network_name=None,
+                                   include_experiment_topology=True, routes=None):
         """
         Like minimal_register_data(), but also includes a `meas_net_nodes`
         list -- get_meas_net()'s {node_name: assign_static_fabnet6_ip()
@@ -679,6 +681,13 @@ class MFPortal(MFLib):
         exists -- see write_registered_slice_info()'s docstring for the
         client-driven equivalent, used when the caller does have direct
         node access.
+
+        With include_experiment_topology (default), registered_slice also
+        gets "experiment_topology" (route_flow.collect_experiment_topology():
+        each node's site and experiment interfaces/IPs, plus optional
+        `routes`), which the meas node's route_flow service uses to install
+        per-route counters and build the topology dashboard. The experiment
+        interfaces need their IPs before this is called.
 
         Returns a dict: id_token, slice_uuid, mfuser_private_key,
         mfuser_public_key, meas_net_nodes, registered_slice.
@@ -713,6 +722,17 @@ class MFPortal(MFLib):
             ],
             "mfuser_private_key": mfuser_private_key,
         }
+        if include_experiment_topology:
+            try:
+                registered_slice["experiment_topology"] = route_flow.collect_experiment_topology(
+                    slice_obj,
+                    meas_node_name=MFPortal.MEAS_NODE_NAME,
+                    exclude_network_prefixes=route_flow.DEFAULT_EXCLUDE_NETWORK_PREFIXES + (meas_network_name,),
+                    routes=routes,
+                    meas_ips={n["node_name"]: n["node_ipv6"] for n in meas_net_nodes},
+                )
+            except Exception as e:
+                print(f"WARNING: could not collect experiment topology for route_flow: {e}")
 
         return {
             "id_token": id_token,
@@ -1261,7 +1281,8 @@ class MFPortal(MFLib):
         ]
 
     @staticmethod
-    def collect_registered_slice_info(slice_obj, mfuser_private_key, meas_network_name=None):
+    def collect_registered_slice_info(slice_obj, mfuser_private_key, meas_network_name=None,
+                                      experiment_topology=None):
         """
         Builds the exact dict a meas node's registered_slice.json needs --
         {slice_id, slice_name, nodes: [...], mfuser_private_key} -- without
@@ -1287,9 +1308,15 @@ class MFPortal(MFLib):
         write_registered_slice_info()'s docstring for why those two keys
         are treated as independent.
 
+        experiment_topology: optional route_flow.collect_experiment_topology()
+        dict (experiment interfaces/IPs, sites, routes). When given it's added
+        as "experiment_topology" so the meas node's route_flow service can
+        set up per-route counters and the topology dashboard without access
+        to the slice object.
+
         Returns the dict.
         """
-        return {
+        registered = {
             "slice_id": slice_obj.get_slice_id(),
             "slice_name": slice_obj.get_name(),
             "nodes": MFPortal.collect_registered_slice_nodes(
@@ -1297,6 +1324,9 @@ class MFPortal(MFLib):
             ),
             "mfuser_private_key": mfuser_private_key,
         }
+        if experiment_topology is not None:
+            registered["experiment_topology"] = experiment_topology
+        return registered
 
     @staticmethod
     def write_registered_slice_info(
@@ -1963,6 +1993,8 @@ class MFPortal(MFLib):
             "    )",
             '    run("Create prometheus service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/prometheus/create.py")',
             '    run("Create grafana manager service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/grafana_manager/create.py")',
+            '    # route_flow reads experiment_topology from registered_slice.json; no-op without it',
+            '    run("Create route_flow service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/route_flow/create.py")',
             '    run("Create meas_node_server service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/meas_node_server/create.py")',
             '    run("Create mflib_mcp service", f"sudo -u mfuser python3 {SERVICES_BASE_DIR}/mflib_mcp/create.py")',
             '    print("[mflib] self-start complete")',
