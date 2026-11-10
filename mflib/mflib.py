@@ -119,7 +119,7 @@ class MFLib(Core):
         ram=16,
         disk=500,
         site="EDC",
-        image="docker_ubuntu_20",
+        image="default_ubuntu_24",
     ):
         """
         Adds Measurement node and measurement network to an unsubmitted slice object.

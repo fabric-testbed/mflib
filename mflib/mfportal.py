@@ -130,7 +130,7 @@ class MFPortal(MFLib):
         fablib,
         slice_name,
         site="EDC",
-        #image="docker_ubuntu_20",
+        #image="default_ubuntu_24",
         image="default_ubuntu_24",
         cores=4,
         ram_gb=16,
