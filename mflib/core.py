@@ -908,13 +908,24 @@ class Core:
         if stdout:
             self.core_logger.debug(f"STDOUT: {stdout}")
         if stderr:
+            # Can be confusing if repo already exists or partially failed previously
+            #  Maybe add a check to ensure the repo has been cleanly cloned and/or check before hand
+            if "detached HEAD" in stderr:
+                # cloning a tag which is OK
+                self.core_logger.debug(f"Tag cloned. STDERR: {stderr}")
+                return True            
             if "already exists and is not an empty directory" not in stderr:
-                msg = (
-                    f"Cloning Measurement Framework Repository from github.com Failed."
-                )
-                self.core_logger.error(msg)
-                self.core_logger.error(f"STDERR: {stderr}")
-                return False
+                # repo already exist - this may or may not be an error?
+                # we will continue on anyway
+                self.core_logger.debug(f"Directory already exists. STDERR: {stderr}")
+                return True
+            
+            msg = (
+                f"Cloning Measurement Framework Repository from github.com Failed."
+            )
+            self.core_logger.error(msg)
+            self.core_logger.error(f"STDERR: {stderr}")
+            return False
         return True
 
     def _run_bootstrap_script(self):

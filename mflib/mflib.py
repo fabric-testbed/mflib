@@ -41,6 +41,7 @@ from os import chmod
 import logging
 
 from mflib.core import Core
+from mflib import switch_ports
 from mflib.node_transport import RestNodeAdapter
 
 
@@ -599,6 +600,15 @@ class MFLib(Core):
                 self.mflib_logger.info(msg)
                 all_data["grafana_manager"] = grafana_manager_data
 
+                # Dashboard linking each interface to its data-switch port on public-metrics.
+                # Not fatal: the slice is still monitored without it.
+                try:
+                    all_data["switch_ports"] = self.add_switch_port_dashboard()
+                except Exception as e:
+                    msg = f"   Switch port dashboard failed: {e}"
+                    print(msg)
+                    self.mflib_logger.exception(msg)
+
             elif service:
                 msg = f"   Setting up {service}..."
                 print(msg)
@@ -619,6 +629,69 @@ class MFLib(Core):
         self.mflib_logger.info(msg)
 
         return all_data
+
+    def get_switch_port_map(self, rack_prefixes=None):
+        """
+        Maps each dataplane interface in the slice to the FABRIC data-switch port and VLAN it uses,
+        with a link to that sub-interface on the public-metrics Per Port Bandwidth dashboard.
+        Read from the slice's FIM model; nothing is run on the nodes.
+
+        Args:
+            rack_prefixes (dict): Site -> rack prefix overrides for switch_ports.SITE_RACK_PREFIX.
+
+        Returns:
+            List of dict: One entry per interface. See switch_ports.get_switch_port_map.
+        """
+        return switch_ports.get_switch_port_map(self.slice, rack_prefixes)
+
+    def add_switch_port_dashboard(self, rack_prefixes=None):
+        """
+        Writes the switch port map to the meas node at /home/mfuser/services/common/switch_ports.json
+        and adds a Grafana dashboard (uid mflib-switch-ports) with a link per interface to
+        public-metrics. Run after grafana_manager has been created; instrumentize does this.
+
+        Args:
+            rack_prefixes (dict): Site -> rack prefix overrides for switch_ports.SITE_RACK_PREFIX.
+
+        Returns:
+            dict: port_map and the grafana_manager update result.
+        """
+        msg = f"   Adding switch port dashboard..."
+        print(msg)
+        self.mflib_logger.info(msg)
+
+        port_map = self.get_switch_port_map(rack_prefixes)
+        for entry in port_map:
+            if not entry["url"]:
+                self.mflib_logger.warning(f"No public-metrics link for {entry}")
+
+        port_map_filename = os.path.join(self.local_slice_directory, "switch_ports.json")
+        with open(port_map_filename, "w") as f:
+            json.dump(port_map, f, indent=2)
+        self.meas_node.upload_file(port_map_filename, "/tmp/switch_ports.json")
+        stdout, stderr = self.meas_node.execute(
+            "sudo mkdir -p /home/mfuser/services/common;"
+            "sudo mv /tmp/switch_ports.json /home/mfuser/services/common/switch_ports.json;"
+            "sudo chown mfuser:mfuser /home/mfuser/services/common/switch_ports.json;",
+            quiet=True,
+        )
+        if stderr:
+            self.mflib_logger.error(f"STDERR: {stderr}")
+
+        dashboard_filename = os.path.join(self.local_slice_directory, "switch_ports_dashboard.json")
+        with open(dashboard_filename, "w") as f:
+            json.dump(switch_ports.make_switch_port_dashboard(self.slice_name, port_map), f)
+        commands = [
+            {"cmd": "upload_dashboards", "dashboard_filenames": [dashboard_filename]},
+            {"cmd": "add_dashboards", "dashboard_filenames": [dashboard_filename]},
+        ]
+        update_data = self.update("grafana_manager", data={"commands": commands}, files=[dashboard_filename])
+        self.mflib_logger.debug(update_data)
+
+        msg = f"   Adding switch port dashboard done."
+        print(msg)
+        self.mflib_logger.info(msg)
+        return {"port_map": port_map, "grafana_manager": update_data}
 
     def _make_hosts_ini_file(self, set_ip=False):
         hosts = []

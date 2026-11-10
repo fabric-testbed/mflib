@@ -1628,7 +1628,7 @@ class MFPortal(MFLib):
         if stdout:
             print(f"STDOUT: {stdout}")
         if stderr:
-            if "already exists and is not an empty directory" not in stderr:
+            if "already exists and is not an empty directory" in stderr:
                 print("Clone Directory already exist. Cloning Measurement Framework Repository from github.com Failed.")
             else:
                 print(f"STDERR: {stderr}")
