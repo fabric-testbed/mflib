@@ -217,7 +217,7 @@ class MFLib(Core):
         self,
         slice="",
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="main",
+        mf_repo_branch="latest",
         optimize_repos=False,
         node=None,
         node_api_url: Optional[str] = None,
@@ -229,7 +229,7 @@ class MFLib(Core):
         Args:
             slice (fablib.slice): Slice object already set with experiment topology.
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
-            mf_repo_branch (str, optional): git branch name to pull MeasurementFramework code from. Defaults to "main" -- the stable, infrequently-updated branch used for manual/notebook-driven instrumentation. MFPortal's own automated meas-node creation flow pins a separate tagged release instead (see MFPortal.meas_node_self_start()'s mf_repo_branch default) rather than using this constructor default.
+            mf_repo_branch (str, optional): MeasurementFramework git branch or tag to clone onto the meas node. Defaults to "latest": the release GitHub labels Latest, looked up when the repo is cloned (falls back to "main" if the lookup fails). Pass e.g. "main" or "v1.0.6" to use a specific branch or tag.
             node: Optional node-like object exposing execute/upload/download methods.
             node_api_url (str, optional): Base URL for the measurement node REST API.
             node_api_token (str, optional): Optional bearer token for the measurement node REST API.

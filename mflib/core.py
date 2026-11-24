@@ -29,6 +29,8 @@ import string
 import random
 import logging
 
+from mflib.mf_repo import LATEST, MF_REPO_URL, resolve_mf_ref
+
 
 class Core:
     """
@@ -315,7 +317,7 @@ class Core:
     def __init__(
         self,
         local_storage_directory="/tmp/mflib",
-        mf_repo_branch="main",
+        mf_repo_branch=LATEST,
         logging_level=logging.DEBUG,
     ):
         """
@@ -323,7 +325,7 @@ class Core:
 
         Args:
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
-            mf_repo_branch (str, optional): git branch name to pull MeasurementFramework code from. Defaults to "main" -- the stable, infrequently-updated branch used for manual/notebook-driven instrumentation. MFPortal's own automated meas-node creation flow pins a separate tagged release instead (see MFPortal.meas_node_self_start()'s mf_repo_branch default), not this constructor default.
+            mf_repo_branch (str, optional): MeasurementFramework git branch or tag to clone onto the meas node. Defaults to "latest": the release GitHub labels Latest, looked up when the repo is cloned (falls back to "main" if the lookup fails). Pass e.g. "main" or "v1.0.6" to use a specific branch or tag.
         """
         # super().__init__()
 
@@ -899,7 +901,9 @@ class Core:
         self.core_logger.debug(msg)
         print(msg)
 
-        cmd = f"sudo -u mfuser git clone -q -b {self.mf_repo_branch} https://github.com/fabric-testbed/MeasurementFramework.git /home/mfuser/mf_git"
+        mf_ref = resolve_mf_ref(self.mf_repo_branch)
+        self.core_logger.info(f"MeasurementFramework ref: {mf_ref} (requested {self.mf_repo_branch!r})")
+        cmd = f"sudo -u mfuser git clone -q --depth 1 -b {mf_ref} {MF_REPO_URL} /home/mfuser/mf_git"
         stdout, stderr = self.meas_node.execute(cmd, quiet=True)
 
         msg = f"Cloning Measurement Framework Repository from github.com done."

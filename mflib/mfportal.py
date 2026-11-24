@@ -47,6 +47,7 @@ import requests as _req
 
 from mflib.mflib import MFLib
 from mflib import route_flow
+from mflib.mf_repo import FALLBACK_REF, LATEST, MF_LATEST_RELEASE_URL, MF_REPO_URL, resolve_mf_ref
 
 
 class MFPortal(MFLib):
@@ -70,16 +71,13 @@ class MFPortal(MFLib):
     MEAS_NETWORK_NAME = "meas-net6"
     RT_V6 = 30
     DEFAULT_PORTAL_URL = "https://mfportal.fabric-testbed.net"
-    # MeasurementFramework ref the portal's own automated meas-node creation
-    # flow clones -- a frozen tag, not a moving branch, so a future
-    # bootstrap-updating commit can't change what self-start delivers until
-    # this is deliberately bumped to a new tag. Update alongside cutting a
-    # new tag from bootstrap-updating (see git tag -a in the repo). Unlike
-    # this, Core/MFLib's own mf_repo_branch constructor default ("main") is
-    # for manual/notebook-driven instrumentation of an experimenter's own
-    # slice -- deliberately separate so a portal-side tag bump never affects
-    # that path, and vice versa.
-    MF_REPO_TAG = "v1.0.0-mfportal"
+    # MeasurementFramework ref the portal's automated meas-node creation flow
+    # clones. "latest" = the release GitHub labels Latest, looked up when the
+    # clone happens (on the meas node itself for meas_node_self_start), so new
+    # MeasurementFramework releases are picked up without a new mflib release.
+    # Same default as Core/MFLib's mf_repo_branch. Pass mf_repo_branch to the
+    # methods below to use a specific branch or tag instead.
+    MF_REPO_TAG = LATEST
 
     # ------------------------------------------------------------------
     # Cell "get_unique_slice_name" helper
@@ -1648,11 +1646,8 @@ class MFPortal(MFLib):
     @staticmethod
     def clone_measurement_framework_repo(node, mf_repo_branch=None):
         # TODO change to downloading a release tarball instead of cloning the repo
-        mf_repo_branch = mf_repo_branch or MFPortal.MF_REPO_TAG
-        cmd = (
-            f"sudo -u mfuser git clone -q -b {mf_repo_branch} "
-            f"https://github.com/fabric-testbed/MeasurementFramework.git /home/mfuser/mf_git"
-        )
+        mf_repo_branch = resolve_mf_ref(mf_repo_branch or MFPortal.MF_REPO_TAG)
+        cmd = f"sudo -u mfuser git clone -q --depth 1 -b {mf_repo_branch} {MF_REPO_URL} /home/mfuser/mf_git"
         stdout, stderr = node.execute(cmd, quiet=True)
 
         if stdout:
@@ -1796,8 +1791,10 @@ class MFPortal(MFLib):
             "import subprocess",
             "from datetime import datetime, timezone",
             "",
-            f'MF_REPO_BRANCH = "{mf_repo_branch}"',
-            'MF_REPO_URL = "https://github.com/fabric-testbed/MeasurementFramework.git"',
+            f'MF_REPO_BRANCH = "{mf_repo_branch}"  # "{LATEST}" = resolved on this node at run time',
+            f'MF_REPO_URL = "{MF_REPO_URL}"',
+            f'MF_LATEST_RELEASE_URL = "{MF_LATEST_RELEASE_URL}"',
+            f'MF_FALLBACK_REF = "{FALLBACK_REF}"',
             'MF_REPO_DIR = "/home/mfuser/mf_git"',
             'SERVICES_DIR = "/home/mfuser/services/common"',
             'SERVICES_BASE_DIR = "/home/mfuser/services"',
@@ -1838,6 +1835,28 @@ class MFPortal(MFLib):
             "    detail = result.stderr.strip() if result.returncode != 0 else None",
             "    record_action(title, result.returncode == 0, detail)",
             "    return result",
+            "",
+            "",
+            "def resolve_mf_ref():",
+            "    # \"latest\" -> the MeasurementFramework release GitHub labels Latest,",
+            "    # looked up now (web redirect, not the rate-limited REST API).",
+            f'    if MF_REPO_BRANCH != "{LATEST}":',
+            "        return MF_REPO_BRANCH",
+            "    import urllib.request",
+            '    title = "Resolve latest MeasurementFramework release"',
+            "    try:",
+            '        req = urllib.request.Request(MF_LATEST_RELEASE_URL, method="HEAD", headers={"User-Agent": "mflib"})',
+            "        with urllib.request.urlopen(req, timeout=15) as resp:",
+            "            url = resp.url",
+            "    except Exception as e:",
+            '        record_action(title, False, f"{e}; using {MF_FALLBACK_REF}")',
+            "        return MF_FALLBACK_REF",
+            '    if "/releases/tag/" not in url:',
+            '        record_action(title, False, f"unexpected URL {url}; using {MF_FALLBACK_REF}")',
+            "        return MF_FALLBACK_REF",
+            '    tag = url.split("/releases/tag/", 1)[1].strip("/")',
+            '    record_action(f"{title}: {tag}", True)',
+            "    return tag",
             "",
             "",
             "def discover_ip():",
@@ -1975,7 +1994,11 @@ class MFPortal(MFLib):
             "",
             "",
             "def main():",
-            '    run("Clone MeasurementFramework repo", f"sudo -u mfuser git clone -q -b {MF_REPO_BRANCH} {MF_REPO_URL} {MF_REPO_DIR}")',
+            "    if os.path.isdir(os.path.join(MF_REPO_DIR, \".git\")):",
+            '        record_action("Clone MeasurementFramework repo", True, "already cloned; left as is")',
+            "    else:",
+            "        ref = resolve_mf_ref()",
+            '        run(f"Clone MeasurementFramework repo ({ref})", f"sudo -u mfuser git clone -q --depth 1 -b {ref} {MF_REPO_URL} {MF_REPO_DIR}")',
             '    run("Create services directory", f"sudo mkdir -p {SERVICES_DIR}")',
             '    run("Set ownership of services dir and mf_git", f"sudo chown -R mfuser:mfuser /home/mfuser/services {MF_REPO_DIR}")',
             "    try:",
