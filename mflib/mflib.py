@@ -42,7 +42,6 @@ import logging
 
 from mflib.core import Core
 from mflib import switch_ports
-from mflib.node_transport import RestNodeAdapter
 
 
 class MFLib(Core):
@@ -220,8 +219,6 @@ class MFLib(Core):
         mf_repo_branch="latest",
         optimize_repos=False,
         node=None,
-        node_api_url: Optional[str] = None,
-        node_api_token: Optional[str] = None,
         slice_name: Optional[str] = None,
     ):
         """
@@ -231,8 +228,6 @@ class MFLib(Core):
             local_storage_directory (str, optional): Directory where local data will be stored. Defaults to "/tmp/mflib".
             mf_repo_branch (str, optional): MeasurementFramework git branch or tag to clone onto the meas node. Defaults to "latest": the release GitHub labels Latest, looked up when the repo is cloned (falls back to "main" if the lookup fails). Pass e.g. "main" or "v1.0.6" to use a specific branch or tag.
             node: Optional node-like object exposing execute/upload/download methods.
-            node_api_url (str, optional): Base URL for the measurement node REST API.
-            node_api_token (str, optional): Optional bearer token for the measurement node REST API.
             slice_name (str, optional): Local storage name when running without a FABlib slice.
         """
         super().__init__(
@@ -242,23 +237,12 @@ class MFLib(Core):
         # self._FM = None
         self.mflib_log_handler = None
 
-        if slice and (node or node_api_url):
+        if slice and node:
             raise ValueError(
-                "Provide either slice or node/node_api_url when constructing MFLib, not both."
+                "Provide either slice or node when constructing MFLib, not both."
             )
 
-        if node_api_url and node:
-            raise ValueError(
-                "Provide either node or node_api_url when constructing MFLib, not both."
-            )
-
-        if node_api_url:
-            self._meas_node = RestNodeAdapter(
-                base_url=node_api_url,
-                auth_token=node_api_token,
-            )
-            self.slice_name = slice_name or self._meas_node.get_name()
-        elif node is not None:
+        if node is not None:
             self._meas_node = node
             resolved_slice_name = slice_name
             if resolved_slice_name is None and hasattr(node, "get_name"):
@@ -554,6 +538,12 @@ class MFLib(Core):
         Returns:
             dict   : The output from each phase of instrumetizing.
         """
+        if not getattr(self, "slice", None):
+            raise RuntimeError(
+                "instrumentize() needs a FABlib slice: construct MFLib(slice). "
+                "MFLib(node=...) supports only service calls (create, info, start, stop, ...)."
+            )
+
         all_data = {}
 
         if not services:

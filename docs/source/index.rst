@@ -12,6 +12,5 @@
    core
    mfportal
    mfvis
-   node_transport
    data_transfer
    mf_timestamp

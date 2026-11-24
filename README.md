@@ -48,65 +48,26 @@ cd mflib
 pip install --user .
 ```
 
-To include the REST server dependencies from source:
+## Running Without a FABlib Slice
 
-```bash
-pip install --user ".[rest]"
-```
-
-## Running Without FABlib
-
-The library can now run in two modes:
-
-1. Slice mode: current behavior, where `MFLib` is constructed with a FABlib slice and can bootstrap topology-aware measurement infrastructure.
-2. Direct mode: `MFLib` is constructed with a REST endpoint for an already reachable measurement node, and service lifecycle calls run through that API instead of FABlib SSH helpers.
-
-Direct mode is intended for operations that already collapse to a single measurement node, such as:
-
-* `create()`
-* `update()`
-* `info()`
-* `start()`
-* `stop()`
-* `remove()`
-* service file upload and download helpers
-
-Topology-aware bootstrap steps still require a FABlib slice today because they depend on slice networks, interface discovery, and fan-out to experiment nodes.
-
-### FastAPI Server on the Measurement Node
-
-Run this on the measurement node:
-
-```bash
-export MFLIB_API_TOKEN="replace-me"
-python3 -m mflib.rest_api --host 0.0.0.0 --port 8000
-```
-
-The server intentionally exposes only the node operations MFLib already uses: command execution, file upload/download, directory upload, and basic metadata.
-
-### Direct Client Example
+Node mode manages MF services on a meas node that is already set up.
+`MFLib(node=...)` accepts any node-like object that provides `execute`,
+`upload_file`, `download_file` and `upload_directory`: a FABlib node, or your
+own wrapper around SSH.
 
 ```python
-from mflib.mflib import MFLib
-
-mfl = MFLib(
-	node_api_url="http://meas-node.example:8000",
-	node_api_token="replace-me",
-	slice_name="my-slice",
-)
-
-result = mfl.create("prometheus")
-print(result)
+mf = MFLib(node=meas_node, slice_name="my-slice")  # slice_name names the local storage folder
+mf.info("prometheus")
+mf.stop(["prometheus"])
 ```
 
-### Suggested Path Forward
+Node mode supports `create`, `update`, `info`, `start`, `stop`, `remove`,
+the service file upload and download helpers, and the tunnel helpers.
 
-Use a staged split between transport and topology:
-
-1. Keep `init()` and `addMeasNode()` in FABlib mode. They are topology-aware and already encode slice bootstrap behavior.
-2. Move service lifecycle and file movement through the new node transport seam. This is now supported by either FABlib or the REST adapter.
-3. Run the FastAPI service behind an SSH tunnel, VPN, or internal FABRIC-only address space. The API executes shell commands and should not be exposed broadly.
-4. If you want fully slice-free bootstrap later, add a second REST service on the control side that supplies topology data and hosts inventory to the measurement node, rather than trying to infer it locally on the node.
+Setting up a meas node still needs `MFLib(slice)`: `addMeasNode`, the initial
+setup (cloning MeasurementFramework and running the bootstrap), and
+`instrumentize` all use the slice's nodes and networks. `instrumentize()`
+raises an error in node mode.
 
 ## Building & Deploying
 
