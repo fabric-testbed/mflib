@@ -41,3 +41,5 @@ textput.log
 
 # Jupyter
 .ipynb_checkpoints/
+# release tooling virtual env (python release/setup_venv.py)
+.venv-release/

@@ -1,6 +1,9 @@
 # 
+import os
 import pathlib
 import sys
+# fablib (imported by autodoc) needs HOME, which Windows shells don't set.
+os.environ.setdefault("HOME", str(pathlib.Path.home()))
 sys.path.insert(0, pathlib.Path(__file__).parents[2].resolve().as_posix())
 
 # Configuration file for the Sphinx documentation builder.

@@ -1,0 +1,9 @@
+# Everything release/release.py and upload_artifacts.py need.
+# Installed into .venv-release by:  python release/setup_venv.py
+# (the tectonic LaTeX engine is not on PyPI; setup_venv.py downloads it into the venv)
+
+flit>=3.9,<5                # build + publish to TestPyPI / PyPI
+
+# Sphinx + theme + extensions, and the packages autodoc imports
+# (fabrictestbed-extensions also provides the Artifact Manager API for upload_artifacts.py)
+-r ../docs/requirements.txt

@@ -11,8 +11,9 @@ history if it's ever needed again.
 Class constants: `MEAS_NODE_NAME = "meas-node"`, `MEAS_NETWORK_NAME = "meas-net6"`,
 `RT_V6 = 30`, `DEFAULT_PORTAL_URL = "https://mfportal.fabric-testbed.net"`
 (default for `register_slice_with_portal()`/`get_portal_login_link()` below),
-`MF_REPO_TAG` (the frozen MeasurementFramework tag `clone_measurement_framework_repo()`/
-`meas_node_self_start()` default to -- see their entries), and
+`MF_REPO_TAG` (`"latest"`: the MeasurementFramework release GitHub labels Latest,
+looked up at clone time -- the default for `clone_measurement_framework_repo()`/
+`meas_node_self_start()`, see their entries; helpers live in `mflib/mf_repo.py`), and
 `mfportal_class_version` (`__version__`/`__VERSION__` alias -- bump whenever this
 file changes in a way worth telling apart from a stale install).
 
@@ -310,8 +311,9 @@ below does as a local systemd service.
 
 - **`clone_measurement_framework_repo(node, mf_repo_branch=None)`** —
   `git clone` the `MeasurementFramework` repo into `/home/mfuser/mf_git`.
-  Defaults to `MFPortal.MF_REPO_TAG` (a frozen tag, e.g. `v1.0.0-mfportal`
-  cut from `bootstrap-updating` -- not a moving branch) when not given.
+  Defaults to `MFPortal.MF_REPO_TAG` (`"latest"`): the MeasurementFramework
+  release GitHub labels Latest, looked up when this runs (falls back to
+  `main` if GitHub can't be reached). Pass a branch or tag to override.
 - **`run_bootstrap_script(node)`** — runs
   `instrumentize/experiment_bootstrap/bootstrap.sh` (installs ansible,
   stages `user_services`).
@@ -338,7 +340,9 @@ below does as a local systemd service.
   playbook), plus a self-generated `write_hosts_ini()` step (mirrors
   `build_meas_node_hosts_ini()`, since the node has no fablib/mflib
   available to it). The service starts immediately and re-runs on every
-  future boot (idempotent).
+  future boot (idempotent). With the default `mf_repo_branch` (`"latest"`)
+  the node itself looks up the Latest MeasurementFramework release when it
+  first clones; an existing `/home/mfuser/mf_git` is left as is.
 
   The generated script's `write_hosts_ini()` also checks for
   `/home/mfuser/registered_slice.json` (see the section above) and, if

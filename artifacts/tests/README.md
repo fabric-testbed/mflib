@@ -22,3 +22,11 @@ assert mflib.__version__ == info["mflib_version"], (mflib.__version__, info)
 
 These are the notebooks to run against each release candidate before
 `release.py final`.
+
+## Notebooks
+
+- **`route_flow_test.ipynb`**: the end-to-end release test. It builds a fresh
+  slice, runs `MFLib(slice)` with the MF release mflib resolves at run time,
+  then checks Prometheus, route_flow, Grafana and ELK. It ends with a PASS/FAIL
+  summary saved to `release_test_results-<mflib>-<mf>.json`. For an MF rc, set
+  `MF_REF`. For an MF final, set `EXPECT_MF`.

@@ -1,0 +1,79 @@
+# =============================================================================
+#  Release settings for mflib and MeasurementFramework (used by release/release.py).
+#
+#  The two repos are versioned INDEPENDENTLY. Set each repo's `version` to the
+#  release you are preparing; rc numbers are assigned automatically (next
+#  unused vX.Y.ZrcN tag in that repo). The tool stamps mflib/__init__.py and
+#  the MeasurementFramework VERSION file from here. Do not hand-edit those.
+#
+#  `main` is never pushed to. Releases reach `main` through a pull request
+#  from `release_branch`, which `final` opens; re-run `final` after merging.
+# =============================================================================
+
+tag_prefix = "v"
+
+# FABRIC user emails listed as authors on the artifacts (used by upload_artifacts.py).
+artifact_authors = []
+
+[repos.mflib]
+version = "1.1.0"                   # PyPI: X.Y.ZrcN on TestPyPI, then X.Y.Z on PyPI
+path = "."                          # relative to the mflib repo root
+remote = "origin"
+release_branch = "nov26updates"     # where development for this cycle lives
+main_branch = "main"
+version_file = "mflib/__init__.py"  # __version_info__ is stamped here
+pypi_name = "fabrictestbed-mflib"
+# mflib does not pin MeasurementFramework: at run time it clones the release
+# GitHub labels "Latest" (mflib/mf_repo.py). See [repos.mf].github_release.
+
+[repos.mf]
+version = "1.1.0"                   # git tag only (no package)
+path = "../MeasurementFramework"    # sibling checkout, relative to mflib root
+remote = "origin"
+release_branch = "nov26updates"
+main_branch = "main"
+version_file = "VERSION"            # plain-text version, created by the tool
+# `final mf` publishes a GitHub Release for the new tag and marks it "Latest".
+# That label is what every mflib install clones, so this is the step that
+# makes an MF release live. Uses the `gh` CLI if installed, else a
+# GITHUB_TOKEN / GH_TOKEN env var, else prints the link to do it by hand.
+github_release = true
+
+# Sphinx docs. conf.py reads mflib.__version__, so ReadTheDocs (which builds
+# `latest` from main) picks up the stamped version on its own. The committed
+# PDF does not, so mflib rc/final rebuild it after stamping and commit it with
+# the version stamp.
+[docs]
+enabled = true
+source = "docs/source"
+build_dir = "docs/build"
+tex = "mflib.tex"                       # Sphinx's LaTeX output (from project name)
+pdf = "MFLib.pdf"                       # committed copy, linked from README / PyPI page
+pdf_command = ["tectonic", "mflib.tex"] # run inside <build_dir>/latex; tectonic is installed
+                                        # into .venv-release by release/setup_venv.py
+pdf_timeout = 900                       # seconds; a hung LaTeX run aborts (and reverts stamps)
+# MiKTeX / TeX Live alternative:
+# pdf_command = ["latexmk", "-pdf", "-interaction=nonstopmode", "-halt-on-error", "mflib.tex"]
+check_html = true                       # also build HTML so RTD breakage shows up at rc time
+
+# Paths whose changes are allowed between the last rc and the final release
+# (everything else must be byte-identical to what was tested).
+[rc_gate]
+ignore = ["release/", "artifacts/"]
+
+# FABRIC Artifact Manager artifacts (mflib only). Each `source` directory is
+# packaged with a pinned requirements.txt and RELEASE_INFO.json, then uploaded
+# as a new version of the artifact titled `title`.
+[artifacts.tests]
+source = "artifacts/tests"
+title = "MFLib Tests"
+description_short = "Test notebooks that exercise MFLib and the Measurement Framework."
+tags = ["mflib", "measurement", "tests"]
+visibility = "Author"               # Author | Project | Public
+
+[artifacts.examples]
+source = "artifacts/examples"
+title = "MFLib Examples"
+description_short = "Simplified example notebooks for getting started with MFLib."
+tags = ["mflib", "measurement", "examples"]
+visibility = "Public"
