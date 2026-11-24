@@ -20,6 +20,9 @@ version = "1.1.0"                   # PyPI: X.Y.ZrcN on TestPyPI, then X.Y.Z on 
 path = "."                          # relative to the mflib repo root
 remote = "origin"
 release_branch = "nov26updates"     # where development for this cycle lives
+# The repo's default branch on GitHub, where releases end up. The tool never
+# pushes to it. rc refuses to run if this branch has commits release_branch
+# lacks; final opens the PR into it, then tags the merge commit vX.Y.Z there.
 main_branch = "main"
 version_file = "mflib/__init__.py"  # __version_info__ is stamped here
 pypi_name = "fabrictestbed-mflib"
@@ -31,8 +34,8 @@ version = "1.1.0"                   # git tag only (no package)
 path = "../MeasurementFramework"    # sibling checkout, relative to mflib root
 remote = "origin"
 release_branch = "nov26updates"
-main_branch = "main"
-version_file = "VERSION"            # plain-text version, created by the tool
+main_branch = "main"                # see [repos.mflib].main_branch
+version_file = "VERSION"           # plain-text version, created by the tool
 # `final mf` publishes a GitHub Release for the new tag and marks it "Latest".
 # That label is what every mflib install clones, so this is the step that
 # makes an MF release live. Uses the `gh` CLI if installed, else a
